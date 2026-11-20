@@ -91,7 +91,7 @@ public class MainActivity extends Activity {
                 + "(utile per segnalare problemi)", 15);
 
         text(col, "Impostazioni", 20);
-        tapDelay = number(col, "Pausa dopo ogni tocco (ms)", p.getInt("tap_delay", 700));
+        tapDelay = number(col, "Pausa dopo ogni tocco (ms)", p.getInt("tap_delay_ms", 350));
         maxBelt = number(col, "Massimo rocchetti sul nastro", p.getInt("max_belt", 5));
         dryRun = new CheckBox(this);
         dryRun.setText("Solo prova: mostra le mosse senza toccare");
@@ -120,7 +120,7 @@ public class MainActivity extends Activity {
     protected void onPause() {
         super.onPause();
         getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-                .putInt("tap_delay", parse(tapDelay, 700, 100, 10000))
+                .putInt("tap_delay_ms", parse(tapDelay, 350, 50, 10000))
                 .putInt("max_belt", parse(maxBelt, 5, 1, 20))
                 .putBoolean("dry_run", dryRun.isChecked())
                 .apply();

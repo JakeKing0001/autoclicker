@@ -39,10 +39,11 @@ class Config:
     # Comportamento
     max_on_belt: int = 5          # non lanciare altri rocchetti se sul nastro ce ne sono gia' tanti
     yarn_per_spool: int = 8       # stima di quanta lana raccoglie un rocchetto sul nastro
-    tap_delay: float = 0.7        # attesa dopo ogni tocco (secondi)
+    tap_delay: float = 0.35       # attesa dopo ogni tocco (secondi)
+    dig_delay: float = 0.2        # attesa dopo una mossa di scavo
     idle_delay: float = 0.6       # attesa quando non c'e' niente da fare
     recent_window: float = 2.5    # per quanti secondi un rocchetto appena toccato conta come "sul nastro"
-    min_free_slots_for_unblock: int = 2  # slot liberi minimi per tentare mosse "di sblocco"
+    reserve_slots: int = 1        # slot da lasciare sempre liberi quando si scava
     # Tocco da fare quando non si vede nessun livello (es. pulsante "Continua"). null = disattivato
     idle_tap: list | None = None
     idle_tap_after: int = 6       # cicli vuoti prima di usare idle_tap

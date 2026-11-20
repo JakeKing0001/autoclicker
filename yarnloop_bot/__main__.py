@@ -65,7 +65,7 @@ def cmd_run(args):
                     dev.tap(dec.spool.x, dec.spool.y)
                     strat.remember(dec.spool)
                     taps += 1
-                time.sleep(cfg.tap_delay)
+                time.sleep(cfg.dig_delay if dec.fast else cfg.tap_delay)
                 continue
 
             if not st.level_visible:

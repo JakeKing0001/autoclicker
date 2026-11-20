@@ -11,17 +11,23 @@ public final class Strategy {
     public static final class Decision {
         public final Vision.Spool spool;
         public final String reason;
+        public final boolean fast; // mossa di scavo: si puo' andare subito avanti
 
         Decision(Vision.Spool spool, String reason) {
+            this(spool, reason, false);
+        }
+
+        Decision(Vision.Spool spool, String reason, boolean fast) {
             this.spool = spool;
             this.reason = reason;
+            this.fast = fast;
         }
     }
 
     int maxOnBelt = 5;
     int yarnPerSpool = 8;
     long recentWindowMs = 2500;
-    int minFreeSlotsForUnblock = 2;
+    int reserveSlots = 1;   // slot da lasciare sempre liberi quando si scava
 
     private final List<long[]> sent = new ArrayList<>(); // {tempo, colore}
 
@@ -84,29 +90,35 @@ public final class Strategy {
         if (best != null)
             return new Decision(best, "griglia: " + n(best.color) + " (esposti " + st.exposed[best.color] + ")");
 
+        // 3) scavo: non aspettare, togli subito i rocchetti che coprono un colore utile.
+        //    costo = quanti rocchetti vanno tolti; ne serve uno slot libero per ognuno (+1 di riserva)
+        Vision.Spool dig = null;
+        int digCost = 99, digTarget = -1;
+        for (Vision.Spool s : st.grid)
+            for (int d = 0; d < s.behind.size(); d++) {
+                int c = s.behind.get(d);
+                if (st.exposed[c] <= 0) continue;
+                int cost = d + 1;
+                boolean better = cost < digCost
+                        || (cost == digCost && need[c] > need[digTarget]);
+                if (better) {
+                    dig = s;
+                    digCost = cost;
+                    digTarget = c;
+                }
+                break;
+            }
+        if (dig != null && digCost <= st.freeSlots() - reserveSlots)
+            return new Decision(dig, "scavo: tolgo " + n(dig.color) + " per arrivare a " + n(digTarget), true);
+
         if (onBelt > 0) return new Decision(null, "aspetto che il nastro lavori");
 
-        // 3) sblocco: togli un rocchetto davanti per arrivare a un colore utile
-        if (st.freeSlots() >= minFreeSlotsForUnblock) {
-            int depth = 99;
+        // 4) ultimo tentativo: il colore con piu' lana rimasta
+        if (!st.grid.isEmpty() && st.freeSlots() >= reserveSlots + 2) {
             for (Vision.Spool s : st.grid)
-                for (int d = 0; d < s.behind.size(); d++)
-                    if (st.exposed[s.behind.get(d)] > 0) {
-                        if (d < depth) {
-                            best = s;
-                            depth = d;
-                        }
-                        break;
-                    }
-            if (best != null)
-                return new Decision(best, "sblocco: tolgo " + n(best.color) + " per " + n(best.behind.get(depth)));
-            // 4) ultimo tentativo: il colore con piu' lana rimasta
-            if (!st.grid.isEmpty() && st.freeSlots() >= minFreeSlotsForUnblock + 1) {
-                for (Vision.Spool s : st.grid)
-                    if (best == null || st.remaining[s.color] > st.remaining[best.color]) best = s;
-                if (st.remaining[best.color] > 0)
-                    return new Decision(best, "tentativo: " + n(best.color));
-            }
+                if (best == null || st.remaining[s.color] > st.remaining[best.color]) best = s;
+            if (st.remaining[best.color] > 0)
+                return new Decision(best, "tentativo: " + n(best.color), true);
         }
         return new Decision(null, "nessuna mossa sicura");
     }

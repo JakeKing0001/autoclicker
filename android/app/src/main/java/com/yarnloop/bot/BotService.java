@@ -46,7 +46,7 @@ public class BotService extends AccessibilityService {
     private volatile boolean running;
     private Strategy strategy;
     private String gamePackage;
-    private long tapDelay = 700, idleDelay = 600;
+    private long tapDelay = 350, digDelay = 200, idleDelay = 400;
     private boolean dryRun;
     private int frame, taps;
 
@@ -180,7 +180,8 @@ public class BotService extends AccessibilityService {
         SharedPreferences p = getSharedPreferences(MainActivity.PREFS, MODE_PRIVATE);
         strategy = new Strategy();
         strategy.maxOnBelt = p.getInt("max_belt", 5);
-        tapDelay = p.getInt("tap_delay", 700);
+        tapDelay = p.getInt("tap_delay_ms", 350);
+        digDelay = Math.min(tapDelay, 200);
         dryRun = p.getBoolean("dry_run", false);
         gamePackage = currentPackage();
         frame = 0;
@@ -268,7 +269,7 @@ public class BotService extends AccessibilityService {
                     strategy.remember(d.spool);
                     taps++;
                 }
-                main.postDelayed(loop, tapDelay);
+                main.postDelayed(loop, d.fast ? digDelay : tapDelay);
             } else {
                 main.postDelayed(loop, idleDelay);
             }

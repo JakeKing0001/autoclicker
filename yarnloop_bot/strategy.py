@@ -13,6 +13,7 @@ from .vision import Spool, State
 class Decision:
     spool: Spool | None
     reason: str
+    fast: bool = False  # mossa di scavo: si puo' andare subito avanti
 
 
 class Strategy:
@@ -59,24 +60,27 @@ class Strategy:
             best = max(cands, key=score)
             return Decision(best, f"griglia: {best.color} (esposti {st.exposed[best.color]})")
 
-        # se c'e' gia' qualcosa sul nastro che lavora, aspetta
+        # 3) scavo: non aspettare, togli subito i rocchetti che coprono un colore utile.
+        #    costo = rocchetti da togliere; serve uno slot libero per ognuno (+ riserva)
+        dig, dig_cost, dig_target = None, 99, None
+        for s in st.grid:
+            for d, c in enumerate(s.behind):
+                if st.exposed[c] <= 0:
+                    continue
+                cost = d + 1
+                if cost < dig_cost or (cost == dig_cost and need.get(c, 0) > need.get(dig_target, 0)):
+                    dig, dig_cost, dig_target = s, cost, c
+                break
+        if dig is not None and dig_cost <= st.free_slots - cfg.reserve_slots:
+            return Decision(dig, f"scavo: tolgo {dig.color} per arrivare a {dig_target}", fast=True)
+
         if on_belt > 0:
             return Decision(None, "aspetto che il nastro lavori")
 
-        # 3) sblocco: togli un rocchetto davanti per arrivare a un colore utile
-        if st.free_slots >= cfg.min_free_slots_for_unblock:
-            best, depth = None, 99
-            for s in st.grid:
-                for d, c in enumerate(s.behind):
-                    if st.exposed[c] > 0 and d < depth:
-                        best, depth = s, d
-                        break
-            if best is not None:
-                return Decision(best, f"sblocco: tolgo {best.color} per arrivare a {best.behind[depth]}")
-            # 4) ultima spiaggia: il colore con piu' lana rimasta nel disegno
-            if st.grid and st.free_slots >= cfg.min_free_slots_for_unblock + 1:
-                best = max(st.grid, key=lambda s: st.remaining[s.color])
-                if st.remaining[best.color] > 0:
-                    return Decision(best, f"tentativo: {best.color}")
+        # 4) ultimo tentativo: il colore con piu' lana rimasta nel disegno
+        if st.grid and st.free_slots >= cfg.reserve_slots + 2:
+            best = max(st.grid, key=lambda s: st.remaining[s.color])
+            if st.remaining[best.color] > 0:
+                return Decision(best, f"tentativo: {best.color}", fast=True)
 
         return Decision(None, "nessuna mossa sicura")

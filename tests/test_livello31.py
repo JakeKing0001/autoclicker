@@ -45,6 +45,18 @@ def test_decision_is_slot():
     assert dec.spool.color in ("green", "yellow")
 
 
+def test_dig_without_waiting():
+    """Se serve solo un colore nascosto, toglie subito il rocchetto davanti (anche col nastro occupato)."""
+    from collections import Counter
+    st = _state()
+    st.exposed = Counter({"pink": 10})       # il rosa e' dietro a giallo e marrone
+    st.slots = [None] * 5
+    st.belt = Counter({"red": 1})            # il nastro sta lavorando
+    dec = Strategy(Config()).decide(st)
+    assert dec.spool is not None and dec.fast
+    assert dec.spool.where == "grid" and dec.spool.color in ("yellow", "brown")
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
