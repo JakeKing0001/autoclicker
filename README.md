@@ -16,6 +16,22 @@ Come ragiona:
 
 Non tocca mai la barra dei bonus in basso (quelli che costano monete).
 
+## App Android (consigliata, senza PC)
+
+1. Scarica e installa [`apk/YarnLoopBot.apk`](apk/YarnLoopBot.apk) (Android 11 o superiore).
+   Se chiede il permesso, consenti l'installazione da questa fonte.
+2. Apri **Yarn Loop Bot** → *Apri impostazioni Accessibilità* → attiva **Yarn Loop Bot**.
+   Se l'interruttore è grigio ("impostazione con limitazioni"): *Info app* → ⋮ in alto a destra →
+   **Consenti impostazioni con limitazioni**, poi riprova.
+3. Apri Yarn Loop. In alto a sinistra compare un pulsante: **▶** avvia, **■** ferma,
+   **✥** trascinalo per spostarlo, **tieni premuto ▶** per salvare uno screenshot in *Immagini/YarnLoopBot*.
+
+Nell'app puoi cambiare la pausa tra i tocchi, il massimo di rocchetti sul nastro e attivare la
+modalità "solo prova". Il codice è in [`android/`](android/) (Java, nessuna libreria esterna):
+`cd android && gradle assembleRelease`.
+
+## Versione Python (PC + ADB)
+
 ## Cosa serve
 
 - Un PC (Windows / Mac / Linux) con **Python 3.9+** e **ADB**

@@ -1,0 +1,38 @@
+plugins {
+    id "com.android.application"
+}
+
+android {
+    namespace "com.yarnloop.bot"
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.yarnloop.bot"
+        minSdk 30          // Android 11: serve per gli screenshot dal servizio di accessibilita'
+        targetSdk 35
+        versionCode 1
+        versionName "1.0"
+    }
+
+    // Chiave fissa nel repository, cosi' le nuove versioni si installano sopra le vecchie
+    signingConfigs {
+        shared {
+            storeFile file("yarnloopbot.keystore")
+            storePassword "android"
+            keyAlias "androiddebugkey"
+            keyPassword "android"
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.shared
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
