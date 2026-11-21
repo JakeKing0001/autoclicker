@@ -186,9 +186,17 @@ def test_guide_changes_choice():
     assert s.decide(st).moves[0].spool.color == "green"
 
 
+def test_links_level36():
+    """Aste lunghe in diagonale che si incrociano e asta corta orizzontale (giallo 30 - blu 20)."""
+    img = os.path.join(os.path.dirname(__file__), "..", "examples", "livello36_collegati.jpg")
+    st = Analyzer(Config()).analyze(np.asarray(Image.open(img).convert("RGB")))
+    pairs = {k: v for k, v in st.links.items() if k < v}
+    assert pairs == {(1, 0): (2, 0), (2, 1): (3, 0), (2, 2): (3, 1)}, pairs
+
+
 def test_no_taps_outside_level():
-    """Sotto i popup (Spazio finito, offerte) il contatore non si legge: nessun tocco sulla griglia."""
-    for f in ("spazio_finito", "vuoi_procedere", "hai_perso", "home_offerta"):
+    """Sotto i popup (Spazio finito, offerte, negozio) il contatore non si legge: nessun tocco sulla griglia."""
+    for f in ("spazio_finito", "vuoi_procedere", "hai_perso", "home_offerta", "negozio", "vite_finite"):
         img = os.path.join(os.path.dirname(__file__), "..", "examples", "screens", f + ".jpg")
         st = Analyzer(Config()).analyze(np.asarray(Image.open(img).convert("RGB")))
         assert st.belt_free is None, f
@@ -200,12 +208,17 @@ def test_screens():
     want = {"hai_perso": (540, 1380), "acquisto_annullato": (540, 1380), "vuoi_procedere": "X",
             "home_offerta": "X", "home": (540, 1950), "spazio_finito": None,
             "home_ads": (540, 1950),  # il cerchio rosso col "%" in Home e' un'offerta, non una X
-            "home_bonanza": "X", "dopo_riprova": None}
+            "home_bonanza": "X", "dopo_riprova": None,
+            "home_difficile": (540, 1950),  # pulsante rosso "Livello 36 Difficile"; il "%" non e' una X
+            "vite_finite": "nessun tocco",  # "Riempi" costa 900 monete: non va toccato
+            "negozio": None}
     for f, exp in want.items():
         img = os.path.join(os.path.dirname(__file__), "..", "examples", "screens", f + ".jpg")
         kind, pt = classify(np.asarray(Image.open(img).convert("RGB")))
         if exp is None:
             assert kind is None, f
+        elif exp == "nessun tocco":
+            assert kind and pt is None, (f, kind, pt)
         elif exp == "X":
             assert kind.startswith("chiudo") and pt[0] > 950 and 450 < pt[1] < 560, (f, pt)
         else:

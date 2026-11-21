@@ -328,7 +328,7 @@ public class BotService extends AccessibilityService {
             if (!running) return;
             if (d.moves.isEmpty()) {
                 long t = android.os.SystemClock.uptimeMillis();
-                if (scrTap != null && scrTap.name.equals(lastScreen) && t - lastScreenTap > 2500) {
+                if (scrTap != null && scrTap.x >= 0 && scrTap.name.equals(lastScreen) && t - lastScreenTap > 2500) {
                     if (!dryRun) tap(scrTap.x, scrTap.y);
                     lastScreenTap = t;
                     lastScreen = null;

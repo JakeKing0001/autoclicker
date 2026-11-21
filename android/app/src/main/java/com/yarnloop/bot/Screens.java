@@ -30,6 +30,7 @@ final class Screens {
     private static final float[] RESULT_PANEL = r(150, 650, 930, 1120);
     private static final float[] OFFER_BOX = r(100, 1550, 980, 2050);
     private static final float[] CLOSE_AREA = r(900, 400, 1070, 620);
+    private static final float[] LIVES_VIDEO = r(300, 1590, 780, 1680); // "+1 vite gratis" sotto "Riempi"
     private static final float[] HOME_BUTTON = r(350, 1900, 730, 2000);
     private static final float[] HOME_NAV = r(0, 2230, 1080, 2330);
 
@@ -80,11 +81,17 @@ final class Screens {
         float green = frac(px, w, h, RESULT_BUTTON, Vision.GREEN, Vision.LIME);
         float panel = frac(px, w, h, RESULT_PANEL, Vision.CREAM, Vision.WHITE);
         float offer = frac(px, w, h, OFFER_BOX, Vision.ORANGE, Vision.YELLOW);
-        if (green >= 0.5f && panel >= 0.6f && offer < 0.05f)
+        if (green >= 0.5f && panel >= 0.6f && offer < 0.05f) {
+            // "Vite finite!": il verde e' "Riempi" con le monete, sotto c'e' "+1 vite gratis" (blu): non toccare
+            float coins = frac(px, w, h, RESULT_BUTTON, Vision.YELLOW, Vision.ORANGE);
+            float below = frac(px, w, h, LIVES_VIDEO, Vision.BLUE, Vision.LIGHTBLUE);
+            if (coins >= 0.03f || below >= 0.3f) return new Result("vite finite (aspetto)", -1, -1);
             return new Result("pulsante Riprova/Continua", (int) (540f / 1080 * w), (int) (1380f / 2340 * h));
+        }
 
         // Home prima di tutto: le sue icone rosse in alto a destra (es. "%") sono offerte, non X
-        if (frac(px, w, h, HOME_BUTTON, Vision.GREEN, Vision.LIME) >= 0.6f
+        // pulsante "Livello N": verde, oppure rosso/magenta per i livelli "Difficile"
+        if (frac(px, w, h, HOME_BUTTON, Vision.GREEN, Vision.LIME, Vision.RED, Vision.MAGENTA, Vision.PINK) >= 0.6f
                 && frac(px, w, h, HOME_NAV, Vision.BLUE, Vision.LIGHTBLUE, Vision.PURPLE) >= 0.5f)
             return new Result("Home: avvio il livello", (int) (540f / 1080 * w), (int) (1950f / 2340 * h));
 
@@ -114,7 +121,8 @@ final class Screens {
             }
             if (qt < minPx) continue;
             int bw = bx1 - bx0 + 1, bh = by1 - by0 + 1;
-            if (bw < 0.05f * w || bw > 0.12f * w || bw / (float) bh < 0.75f || bw / (float) bh > 1.33f) continue;
+            // la X di chiusura e' grande ~117 px, il "%" delle offerte in Home ~67 px
+            if (bw < 0.09f * w || bw > 0.13f * w || bw / (float) bh < 0.75f || bw / (float) bh > 1.33f) continue;
             int mx = (bx0 + bx1 + 1) / 2, my = (by0 + by1 + 1) / 2;
             if (isX(px, w, h, x0 + mx, y0 + my, bw)) return new Result("chiudo (X)", x0 + mx, y0 + my);
         }

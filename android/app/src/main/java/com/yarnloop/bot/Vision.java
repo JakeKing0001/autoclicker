@@ -219,8 +219,11 @@ public final class Vision {
         int[] C = rect(COUNTER);
         String txt = Digits.read(px, w, h, C[0], C[1], C[2], C[3], dh);
         String[] parts = txt.split("/", -1);
-        st.beltFree = parts[0].matches("\\d{1,2}") ? Integer.parseInt(parts[0]) : -1;
-        st.beltCap = parts.length > 1 && parts[1].matches("\\d{1,2}") ? Integer.parseInt(parts[1]) : -1;
+        // dev'essere proprio "N/M" (M = posti del nastro): un "0" qualsiasi (es. nel negozio) non basta
+        boolean ok = parts.length == 2 && parts[0].matches("\\d{1,2}") && parts[1].matches("\\d")
+                && Integer.parseInt(parts[1]) >= 3 && Integer.parseInt(parts[0]) <= Integer.parseInt(parts[1]);
+        st.beltFree = ok ? Integer.parseInt(parts[0]) : -1;
+        st.beltCap = ok ? Integer.parseInt(parts[1]) : -1;
         if (st.beltFree >= 0) beltLabels(st);
         int[] S = rect(SLOTS);
         int hw = (int) (SPOOL_W * w / 2);
@@ -477,6 +480,38 @@ public final class Vision {
         return n > 0 && f > 0.03f * n;
     }
 
+    /** Frazione di pixel non sfondo/crema (le aste sono per meta' nere). */
+    private float coloredOrBlack(int cx, int cy, int r) {
+        int n = 0, f = 0;
+        for (int y = Math.max(0, cy - r); y < Math.min(h, cy + r + 1); y++)
+            for (int x = Math.max(0, cx - r); x < Math.min(w, cx + r + 1); x++) {
+                n++;
+                if (!ignored(c(x, y))) f++;
+            }
+        return n == 0 ? 0 : f / (float) n;
+    }
+
+    private static boolean neutral(int c) {
+        return c == BLACK || c == GEN;
+    }
+
+    /** Il pezzo d'asta vicino a un rocchetto ha il suo colore (rocchetto nascosto o colore non letto: ok). */
+    private static boolean stickOk(int spool, int stick) {
+        if (spool < 0 || stick < 0 || neutral(stick)) return true;
+        switch (spool) {
+            case MYSTERY: return false;
+            case WHITE: return stick == WHITE || stick == BG;
+            case PINK: case MAGENTA: return stick == PINK || stick == MAGENTA;
+            case BLUE: return stick == BLUE || stick == LIGHTBLUE;
+            case LIGHTBLUE: return stick == BLUE || stick == LIGHTBLUE || stick == CYAN;
+            case GREEN: case LIME: return stick == GREEN || stick == LIME;
+            case ORANGE: return stick == ORANGE || stick == SKIN;
+            case SKIN: return stick == SKIN || stick == ORANGE || stick == BROWN;
+            case BROWN: return stick == BROWN || stick == SKIN;
+            default: return stick == spool;
+        }
+    }
+
     /** Aste che collegano due rocchetti di colonne vicine (anche con uno nascosto sotto la barra). */
     private void links(State st) {
         float pitchY = SPOOL_PITCH * h;
@@ -490,20 +525,30 @@ public final class Vision {
                     boolean va = st.cell(c, ra) >= 0, vb = st.cell(c + 1, rb) >= 0;
                     if (!va && !vb) continue;
                     if ((!va && ra < st.visibleRows) || (!vb && rb < st.visibleRows)) continue;
-                    float ax = st.colX[c], ay = st.rowY[ra] + 0.3f * pitchY;
-                    float bx = st.colX[c + 1], by = st.rowY[rb] + 0.3f * pitchY;
+                    // stessa riga: asta corta all'altezza del tappo; in diagonale passa piu' in basso
+                    float off = ra == rb ? 0.15f : 0.3f;
+                    float ax = st.colX[c], ay = st.rowY[ra] + off * pitchY;
+                    float bx = st.colX[c + 1], by = st.rowY[rb] + off * pitchY;
                     float min = 1f;
-                    int n = 0;
+                    int n = 0, colA = -2, colB = -2;
                     float[] pts = new float[6];
                     for (float t : new float[]{0.4f, 0.5f, 0.6f}) {
                         int x = (int) (ax + (bx - ax) * t), y = (int) (ay + (by - ay) * t);
                         if (y + r >= gy1) continue;
-                        min = Math.min(min, colored(x, y, r));
+                        min = Math.min(min, coloredOrBlack(x, y, r));
+                        int dom = dominant(x - r, y - r, x + r + 1, y + r + 1, 0.3f, false);
+                        if (t < 0.45f) colA = dom;
+                        if (t > 0.55f) colB = dom;
                         pts[2 * n] = x;
                         pts[2 * n + 1] = y;
                         n++;
                     }
-                    if (n >= 2 && min > 0.75f)
+                    // ogni meta' dell'asta ha il colore del suo rocchetto (nero = bordo, va bene): almeno una
+                    // meta' deve corrispondere davvero, altrimenti e' un'asta di altri che passa li'
+                    int sa = st.cell(c, ra), sb = st.cell(c + 1, rb);
+                    boolean okA = stickOk(sa, colA), okB = stickOk(sb, colB);
+                    boolean exact = (okA && colA >= 0 && !neutral(colA)) || (okB && colB >= 0 && !neutral(colB));
+                    if (n >= 2 && min > 0.75f && okA && okB && exact)
                         cand.add(new float[]{(va ? 1 : 0) + (vb ? 1 : 0), n, min, c * 100 + ra, (c + 1) * 100 + rb,
                                 n, pts[0], pts[1], pts[2], pts[3], pts[4], pts[5]});
                 }

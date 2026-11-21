@@ -32,6 +32,7 @@ RESULT_BUTTON = _r(380, 1340, 700, 1420)
 RESULT_PANEL = _r(150, 650, 930, 1120)
 OFFER_BOX = _r(100, 1550, 980, 2050)
 CLOSE_AREA = _r(900, 400, 1070, 620)
+LIVES_VIDEO = _r(300, 1590, 780, 1680)  # pulsante blu "+1 vite gratis" sotto "Riempi"
 HOME_BUTTON = _r(350, 1900, 730, 2000)
 HOME_NAV = _r(0, 2230, 1080, 2330)
 
@@ -58,10 +59,18 @@ def classify(img: np.ndarray):
     panel = _frac(img, RESULT_PANEL, ["cream", "white"], w, h)
     offer = _frac(img, OFFER_BOX, ["orange", "yellow"], w, h)
     if green >= 0.5 and panel >= 0.6 and offer < 0.05:
+        # "Vite finite!": il pulsante verde e' "Riempi" con le monete e sotto c'e' "+1 vite gratis" (blu):
+        # non si tocca niente, si aspetta che le vite si ricarichino
+        coins = _frac(img, RESULT_BUTTON, ["yellow", "orange"], w, h)
+        below = _frac(img, LIVES_VIDEO, ["blue", "lightblue"], w, h)
+        if coins >= 0.03 or below >= 0.3:
+            return "vite finite (aspetto)", None
         return "pulsante Riprova/Continua", (int(540 / 1080 * w), int(1380 / 2340 * h))
 
     # Home prima di tutto (le sue icone rosse in alto a destra sono offerte, non X di chiusura)
-    if _frac(img, HOME_BUTTON, GREEN, w, h) >= 0.6 and _frac(img, HOME_NAV, ["blue", "lightblue", "purple"], w, h) >= 0.5:
+    # pulsante "Livello N": verde, oppure rosso/magenta per i livelli "Difficile"
+    btn = _frac(img, HOME_BUTTON, GREEN + ["red", "magenta", "pink"], w, h)
+    if btn >= 0.6 and _frac(img, HOME_NAV, ["blue", "lightblue", "purple"], w, h) >= 0.5:
         return "Home: avvio il livello", (int(540 / 1080 * w), int(1950 / 2340 * h))
 
     # X rossa di chiusura in alto a destra: cerchio rosso con una X bianca in mezzo
@@ -71,7 +80,8 @@ def classify(img: np.ndarray):
     white = D.white_mask(sub)
     for cx0, cy0, cx1, cy1, n in D.components(red, min_px=int((0.02 * w) ** 2)):
         bw, bh = cx1 - cx0, cy1 - cy0
-        if not (0.05 * w <= bw <= 0.12 * w and 0.75 <= bw / bh <= 1.33):
+        # la X di chiusura e' grande ~117 px; il "%" delle offerte in Home ~67 px
+        if not (0.09 * w <= bw <= 0.13 * w and 0.75 <= bw / bh <= 1.33):
             continue
         mx, my = (cx0 + cx1) // 2, (cy0 + cy1) // 2
         if _is_x(white, mx, my, bw):

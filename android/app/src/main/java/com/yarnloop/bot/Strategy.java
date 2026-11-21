@@ -265,6 +265,17 @@ public final class Strategy {
                     if (group(st, p[0], fr) != null) {
                         int k = enc(p[0], fr);
                         digCost.put(k, Math.min(digCost.getOrDefault(k, INF), cost));
+                    } else {
+                        // il primo e' collegato a uno non in prima fila: si libera prima quella colonna
+                        Integer mate = st.links.get(enc(p[0], fr));
+                        if (mate != null) {
+                            int md = depth(st, mate / 100, mate % 100);
+                            int fr2 = st.front(mate / 100);
+                            if (md > 0 && md < INF && fr2 >= 0 && group(st, mate / 100, fr2) != null) {
+                                int k = enc(mate / 100, fr2);
+                                digCost.put(k, Math.min(digCost.getOrDefault(k, INF), cost + md));
+                            }
+                        }
                     }
                     break;
                 }

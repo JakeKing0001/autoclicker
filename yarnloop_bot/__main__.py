@@ -89,7 +89,7 @@ def cmd_run(args):
 
             if st.belt_free is None and cfg.auto_buttons:
                 # fuori dal livello: Riprova / Continua / X / Livello N, solo se la schermata e' stabile
-                if kind and kind == last_screen and time.monotonic() - last_screen_tap > cfg.screen_tap_every:
+                if kind and pt and kind == last_screen and time.monotonic() - last_screen_tap > cfg.screen_tap_every:
                     print(f"   {kind}: tocco {pt}")
                     if not args.dry_run:
                         dev.tap(*pt)

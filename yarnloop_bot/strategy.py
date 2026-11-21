@@ -222,6 +222,14 @@ class Strategy:
                     f = (p[0], self._front(st, p[0]))
                     if self._group(st, f) is not None:
                         dig_cols[f] = min(dig_cols.get(f, INF), cost)
+                    else:
+                        # il rocchetto davanti e' collegato a uno che non e' in prima fila:
+                        # bisogna liberare prima la colonna del compagno (scavo a catena)
+                        mate = st.links.get(f)
+                        if mate is not None and self._depth(st, mate) < INF and self._depth(st, mate) > 0:
+                            f2 = (mate[0], self._front(st, mate[0]))
+                            if self._group(st, f2) is not None:
+                                dig_cols[f2] = min(dig_cols.get(f2, INF), cost + self._depth(st, mate))
                     break
 
         moves, used_cols, used_slots = [], set(), set()

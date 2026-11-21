@@ -242,7 +242,7 @@ class Analyzer:
         pitch_y = self.cfg.spool_pitch * h
         r = max(3, int(0.005 * w))
         gy1 = _px(self.cfg.grid, w, h)[3]
-        ign = [C.index(n) for n in ("bg", "cream", "black")]
+        ign = [C.index(n) for n in ("bg", "cream")]  # le aste sono per meta' nere: il nero conta
         n_rows = len(rows) + 2  # anche un paio di righe nascoste
         row_y = [rows[0] + i * pitch_y for i in range(n_rows)]
         cand = []
@@ -255,9 +255,12 @@ class Analyzer:
                         continue
                     if (a not in cells and ra < len(rows)) or (b not in cells and rb < len(rows)):
                         continue  # un lato e' una casella vuota visibile
-                    ax, ay = xs[c], row_y[ra] + 0.3 * pitch_y
-                    bx, by = xs[c + 1], row_y[rb] + 0.3 * pitch_y
-                    vals, pts = [], []
+                    # le aste partono dal tappo: per due rocchetti sulla stessa riga l'asta e' corta e
+                    # orizzontale all'altezza del tappo, per quelli in diagonale passa un po' piu' in basso
+                    off = 0.15 if ra == rb else 0.3
+                    ax, ay = xs[c], row_y[ra] + off * pitch_y
+                    bx, by = xs[c + 1], row_y[rb] + off * pitch_y
+                    vals, pts, cols = [], [], {}
                     for t in (0.4, 0.5, 0.6):
                         x, y = int(ax + (bx - ax) * t), int(ay + (by - ay) * t)
                         if y + r >= gy1:
@@ -265,7 +268,13 @@ class Analyzer:
                         patch = C.classify(img[y - r: y + r + 1, x - r: x + r + 1])
                         vals.append(float((~np.isin(patch, ign)).mean()))
                         pts.append((x, y))
-                    if len(vals) >= 2 and min(vals) > 0.75:
+                        cols[t] = C.dominant(img[y - r: y + r + 1, x - r: x + r + 1], min_fraction=0.3)[0]
+                    # ogni meta' dell'asta ha il colore del suo rocchetto (nero per i "?", grigio per
+                    # i bianchi e per quelli nascosti): un'asta di altri colori passa li' per caso
+                    ok_a, ok_b = _stick_ok(cells.get(a), cols.get(0.4)), _stick_ok(cells.get(b), cols.get(0.6))
+                    # il bordo dell'asta e' nero: un lato nero va bene se l'altro corrisponde davvero
+                    exact = (ok_a and cols.get(0.4) not in _NEUTRAL | {None}) or (ok_b and cols.get(0.6) not in _NEUTRAL | {None})
+                    if len(vals) >= 2 and min(vals) > 0.75 and ok_a and ok_b and exact:
                         visible = (a in cells) + (b in cells)
                         cand.append((visible, len(vals), min(vals), a, b, pts))
         links, used = {}, []
@@ -413,8 +422,12 @@ class Analyzer:
         cx0, cy0, cx1, cy1 = _px(self.cfg.counter, w, h)
         txt = D.read(img[cy0:cy1, cx0:cx1], dh)
         parts = txt.split("/")
-        belt_free = int(parts[0]) if parts[0].isdigit() else None
-        belt_cap = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None
+        # il contatore deve essere proprio "N/M" (con M = posti del nastro): un "0" qualsiasi
+        # (es. nel negozio) non basta per dire che siamo nel livello
+        ok = len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit() and 3 <= int(parts[1]) <= 9 \
+            and int(parts[0]) <= int(parts[1])
+        belt_free = int(parts[0]) if ok else None
+        belt_cap = int(parts[1]) if ok else None
         sx0, sy0, sx1, sy1 = _px(self.cfg.slots, w, h)
         hw = int(self.cfg.spool_w * w / 2)
         for sp in slots:
@@ -450,6 +463,22 @@ class Analyzer:
             belt_cap=belt_cap,
             counts=counts,
         )
+
+
+_STICK = {"mystery": {"black"}, "white": {"white", "bg"}, "black": {"black"},
+          "pink": {"pink", "magenta"}, "magenta": {"pink", "magenta"}, "blue": {"blue", "lightblue"},
+          "lightblue": {"blue", "lightblue", "cyan"}, "green": {"green", "lime"}, "lime": {"green", "lime"},
+          "orange": {"orange", "skin"}, "skin": {"skin", "orange", "brown"}, "brown": {"brown", "skin"}}
+
+
+_NEUTRAL = {"black", "generator"}  # bordo nero dell'asta, o l'asta che passa sopra un distributore
+
+
+def _stick_ok(spool_color, stick_color) -> bool:
+    """Il pezzo d'asta vicino a un rocchetto ha il suo colore (se il rocchetto e' nascosto va bene tutto)."""
+    if spool_color is None or stick_color is None:
+        return True
+    return stick_color in _NEUTRAL or stick_color in _STICK.get(spool_color, {spool_color})
 
 
 def _drop_small_parts(fg: np.ndarray, cell: int, min_cells: int) -> np.ndarray:
