@@ -77,28 +77,60 @@ final class Guide {
         return p;
     }
 
-    /** Priorita' del livello: dalla memoria, altrimenti scaricate (da chiamare fuori dal thread principale). */
-    static int[] load(SharedPreferences prefs, int level) {
+    static final String UA = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) "
+            + "Chrome/131.0.0.0 Mobile Safari/537.36";
+
+    /** Esito di un download: priorita' (tutte 0 se non trovata) e cosa e' successo. */
+    static final class Result {
+        final int[] p;
+        final String status;
+
+        Result(int[] p, String status) {
+            this.p = p;
+            this.status = status;
+        }
+
+        boolean found() {
+            for (int v : p) if (v > 0) return true;
+            return false;
+        }
+    }
+
+    /**
+     * Priorita' del livello: dalla memoria, altrimenti scaricata (fuori dal thread principale).
+     * Si salva solo se ha trovato qualcosa, cosi' dopo un errore si riprova.
+     */
+    static Result load(SharedPreferences prefs, int level, boolean useCache) {
         String key = "guide_" + level;
-        String cached = prefs.getString(key, null);
-        if (cached != null) return decode(cached);
+        String cached = useCache ? prefs.getString(key, null) : null;
+        if (cached != null && !cached.equals("-")) return new Result(decode(cached), "ok (salvata)");
         try {
             HttpURLConnection c = (HttpURLConnection) new URL(String.format(Locale.ROOT, URL_FMT, level)).openConnection();
-            c.setConnectTimeout(8000);
-            c.setReadTimeout(8000);
-            c.setRequestProperty("User-Agent", "Mozilla/5.0 (Android)");
-            if (c.getResponseCode() != 200) return new int[Vision.N];
+            c.setConnectTimeout(10000);
+            c.setReadTimeout(10000);
+            c.setInstanceFollowRedirects(true);
+            c.setRequestProperty("User-Agent", UA);
+            c.setRequestProperty("Accept", "text/html,application/xhtml+xml");
+            c.setRequestProperty("Accept-Language", "it-IT,it;q=0.9,en;q=0.8");
+            int code = c.getResponseCode();
+            if (code != 200) return new Result(new int[Vision.N], "errore HTTP " + code);
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
             try (InputStream in = c.getInputStream()) {
                 byte[] buf = new byte[16384];
                 int n;
                 while ((n = in.read(buf)) > 0 && bos.size() < 3_000_000) bos.write(buf, 0, n);
             }
-            int[] p = priorities(bos.toString("UTF-8"));
-            prefs.edit().putString(key, encode(p)).apply();
-            return p;
+            String page = bos.toString("UTF-8");
+            int[] p = priorities(page);
+            Result r = new Result(p, page.contains("Full Solution") ? "ok" : "pagina senza soluzione ("
+                    + bos.size() / 1024 + " KB)");
+            if (r.found()) prefs.edit().putString(key, encode(p)).apply();
+            else if (r.status.equals("ok")) r = new Result(p, "soluzione senza colori");
+            return r;
+        } catch (java.net.UnknownHostException e) {
+            return new Result(new int[Vision.N], "nessuna rete");
         } catch (Exception e) {
-            return new int[Vision.N]; // niente rete: si gioca senza guida (si riprova al prossimo avvio)
+            return new Result(new int[Vision.N], "errore: " + e.getClass().getSimpleName());
         }
     }
 
@@ -117,6 +149,11 @@ final class Guide {
         boolean outOfLevel, lost, fromScreen;
 
         void update(boolean inLevel, boolean fresh, String kind, int number) {
+            if (number > 0 && inLevel) { // scritta "Livello N" in alto: sicuro
+                level = number;
+                lost = fromScreen = outOfLevel = false;
+                return;
+            }
             if (number > 0) {
                 level = number;
                 fromScreen = true;

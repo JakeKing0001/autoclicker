@@ -106,7 +106,22 @@ public class MainActivity extends Activity {
         followGuide.setText("Segui la guida di yarnlooplevel.com (colori consigliati per il livello)");
         followGuide.setChecked(p.getBoolean("follow_guide", true));
         col.addView(followGuide);
-        level = number(col, "Livello attuale (0 = lo legge da solo in Home)", p.getInt("level", 0));
+        level = number(col, "Livello attuale (0 = lo legge da solo)", p.getInt("level", 0));
+        button(col, "Prova la guida per questo livello", () -> {
+            int n = parse(level, 0, 0, 5000);
+            if (n <= 0) {
+                new android.app.AlertDialog.Builder(this).setMessage("Scrivi prima il numero del livello.")
+                        .setPositiveButton("OK", null).show();
+                return;
+            }
+            SharedPreferences prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+            new Thread(() -> {
+                Guide.Result r = Guide.load(prefs, n, false);
+                String msg = "Livello " + n + ": " + r.status + "\nColori consigliati: " + Guide.describe(r.p);
+                runOnUiThread(() -> new android.app.AlertDialog.Builder(this).setTitle("Guida yarnlooplevel.com")
+                        .setMessage(msg).setPositiveButton("OK", null).show());
+            }).start();
+        });
         text(col, "Le impostazioni valgono dal prossimo ▶.", 12).setTextColor(Color.GRAY);
 
         text(col, "Il bot tocca i rocchetti solo quando vede il contatore del nastro (N/5): sotto i popup, "

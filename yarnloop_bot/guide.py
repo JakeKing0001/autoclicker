@@ -12,6 +12,7 @@ from __future__ import annotations
 import email
 import html as htmlmod
 import re
+import time
 import urllib.request
 from email import policy
 
@@ -27,6 +28,8 @@ COLOR_WORDS = {
     "green": ["green", "lime"], "lime": ["lime"], "purple": ["purple"], "violet": ["purple"],
 }
 STEP_WEIGHTS = [6, 4, 2, 1]
+UA = ("Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) "
+      "Chrome/131.0.0.0 Mobile Safari/537.36")
 
 
 def html_to_text(page: str) -> str:
@@ -75,7 +78,8 @@ def from_file(path: str) -> dict[str, int]:
 
 
 def fetch(level: int, timeout: float = 10) -> dict[str, int]:
-    req = urllib.request.Request(URL.format(n=level), headers={"User-Agent": "Mozilla/5.0 (Android)"})
+    req = urllib.request.Request(URL.format(n=level), headers={"User-Agent": UA, "Accept": "text/html",
+                                                               "Accept-Language": "it-IT,it;q=0.9,en;q=0.8"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return from_html(r.read().decode("utf-8", "replace"))
 
@@ -91,7 +95,8 @@ class LevelTracker:
         self.level = level
         self.online = online
         self.loader = loader or fetch
-        self.cache: dict[int, dict[str, int]] = {}
+        self.cache: dict[int, tuple] = {}  # livello -> (priorita', quando)
+        self.status = ""
         self.out_of_level = False
         self.lost = False
         self.from_screen = False
@@ -100,14 +105,21 @@ class LevelTracker:
     def colors(self) -> dict[str, int]:
         if not self.online or not self.level:
             return {}
-        if self.level not in self.cache:
+        got = self.cache.get(self.level)
+        if got is None or (not got[0] and time.monotonic() - got[1] > 60):
             try:
-                self.cache[self.level] = self.loader(self.level)
-            except Exception:
-                self.cache[self.level] = {}  # niente rete o pagina diversa: si gioca senza guida
-        return self.cache[self.level]
+                pr = self.loader(self.level)
+                self.status = "ok" if pr else "pagina senza soluzione"
+            except Exception as e:  # niente rete o sito irraggiungibile: si gioca senza guida
+                pr, self.status = {}, f"errore: {e}"
+            self.cache[self.level] = (pr, time.monotonic())  # se vuota si riprova tra un minuto
+        return self.cache[self.level][0]
 
     def update(self, in_level: bool, fresh_level: bool, screen_kind: str | None, number: int | None):
+        if number and in_level:
+            # letto dalla scritta "Livello N" in alto: e' sicuro
+            self.level, self.lost, self.from_screen, self.out_of_level = number, False, False, False
+            return
         if number:
             self.level = number
             self.from_screen = True

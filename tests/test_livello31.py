@@ -169,6 +169,11 @@ def test_level_number_and_tracker():
     t.update(False, False, None, None)                         # vinto (schermata non letta)
     t.update(True, True, None, None)
     assert t.level == 36
+    t.update(True, False, None, 40)                            # scritta "Livello 40" in alto
+    assert t.level == 40
+    img = np.asarray(Image.open(os.path.join(os.path.dirname(__file__), "..", "examples", "livello35_etichetta.jpg")).convert("RGB"))
+    assert level_number(img, None, True) == 35
+    assert level_number(np.asarray(Image.open(IMG).convert("RGB")), None, True) == 31
 
 
 def test_guide_changes_choice():

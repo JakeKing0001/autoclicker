@@ -80,15 +80,18 @@ def classify(img: np.ndarray):
     return None, None
 
 
+LEVEL_LABEL = _r(0, 110, 320, 260)      # scritta "Livello N" in alto a sinistra durante il livello
 LEVEL_HOME = _r(330, 1880, 760, 2030)   # pulsante "Livello N" della Home
 LEVEL_PANEL = _r(200, 420, 880, 570)    # titolo "Livello N" del pannello Hai perso
 
 
-def level_number(img: np.ndarray, kind: str | None):
-    """Numero del livello, letto solo dove e' affidabile: pulsante della Home o titolo del pannello."""
-    if not kind:
+def level_number(img: np.ndarray, kind: str | None, in_level: bool = False):
+    """Numero del livello: scritta in alto durante il livello, pulsante della Home, titolo del pannello."""
+    if in_level:
+        rc = LEVEL_LABEL
+    elif not kind:
         return None
-    if kind.startswith("Home"):
+    elif kind.startswith("Home"):
         rc = LEVEL_HOME
     elif kind.startswith("pulsante"):
         rc = LEVEL_PANEL

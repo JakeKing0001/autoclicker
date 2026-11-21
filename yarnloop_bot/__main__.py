@@ -59,7 +59,8 @@ def cmd_run(args):
             # numero del livello (Home / Hai perso) e guida di yarnlooplevel.com per quel livello
             kind, pt = screens.classify(arr) if st.belt_free is None else (None, None)
             fresh = st.belt_free is not None and st.belt_free == (st.belt_cap or 5) and st.free_slots == len(st.slots)
-            tracker.update(st.belt_free is not None, fresh, kind, screens.level_number(arr, kind))
+            in_level = st.belt_free is not None
+            tracker.update(in_level, fresh, kind, screens.level_number(arr, kind, in_level))
             strat.guide = tracker.colors
             dec = strat.decide(st)
             frame += 1
@@ -69,7 +70,7 @@ def cmd_run(args):
             if dec.moves and (level_streak < 2 or time.monotonic() - last_screen_tap < cfg.settle_time):
                 dec.moves, dec.reason = [], "aspetto che il livello sia pronto"
             print(
-                f"[{frame}] livello {tracker.level or '?'} guida {strat.guide or '-'} | esposti: {_fmt(st.exposed)} | "
+                f"[{frame}] livello {tracker.level or '?'} guida {strat.guide or tracker.status or '-'} | esposti: {_fmt(st.exposed)} | "
                 f"slot liberi {st.free_slots} -> {dec.reason}"
             )
             if args.save_debug:

@@ -122,13 +122,14 @@ final class Screens {
         return null;
     }
 
+    private static final float[] LEVEL_LABEL = r(0, 110, 320, 260);      // "Livello N" in alto, nel livello
     private static final float[] LEVEL_HOME = r(330, 1880, 760, 2030);   // pulsante "Livello N" della Home
     private static final float[] LEVEL_PANEL = r(200, 420, 880, 570);    // titolo del pannello Hai perso
 
     /** Numero del livello, letto solo dove e' affidabile (Home, pannello Hai perso), o -1. */
-    static int levelNumber(int[] px, int w, int h, Result scr) {
-        if (scr == null) return -1;
-        float[] rc = scr.name.startsWith("Home") ? LEVEL_HOME : scr.name.startsWith("pulsante") ? LEVEL_PANEL : null;
+    static int levelNumber(int[] px, int w, int h, Result scr, boolean inLevel) {
+        float[] rc = inLevel ? LEVEL_LABEL : scr == null ? null
+                : scr.name.startsWith("Home") ? LEVEL_HOME : scr.name.startsWith("pulsante") ? LEVEL_PANEL : null;
         if (rc == null) return -1;
         return Digits.readLevel(px, w, h, (int) (rc[0] * w), (int) (rc[1] * h), (int) (rc[2] * w), (int) (rc[3] * h));
     }

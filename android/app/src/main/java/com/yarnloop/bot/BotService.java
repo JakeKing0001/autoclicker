@@ -56,23 +56,37 @@ public class BotService extends AccessibilityService {
     private final java.util.Map<Integer, int[]> guides = new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.Set<Integer> loading = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
+    private volatile String guideStatus = "";
+    private final java.util.Map<Integer, Long> guideTried = new java.util.concurrent.ConcurrentHashMap<>();
+
     /** Priorita' dei colori dalla guida del livello; la pagina si scarica in un thread a parte. */
     private int[] guideFor(int level) {
-        if (!followGuide || level <= 0) return new int[Vision.N];
+        if (!followGuide) return new int[Vision.N];
+        if (level <= 0) {
+            guideStatus = "livello sconosciuto";
+            return new int[Vision.N];
+        }
         int[] g = guides.get(level);
         if (g != null) return g;
+        long now = android.os.SystemClock.uptimeMillis();
+        Long last = guideTried.get(level);
         if (loading.add(level)) {
-            SharedPreferences p = getSharedPreferences(MainActivity.PREFS, MODE_PRIVATE);
-            new Thread(() -> {
-                guides.put(level, Guide.load(p, level));
-                loading.remove(level);
-            }).start();
+            if (last != null && now - last < 60000) {
+                loading.remove(level); // dopo un errore si riprova tra un minuto
+            } else {
+                guideTried.put(level, now);
+                guideStatus = "scarico la guida...";
+                SharedPreferences p = getSharedPreferences(MainActivity.PREFS, MODE_PRIVATE);
+                new Thread(() -> {
+                    Guide.Result r = Guide.load(p, level, true);
+                    if (r.found()) guides.put(level, r.p);
+                    guideStatus = r.status;
+                    loading.remove(level);
+                }).start();
+            }
         }
         return new int[Vision.N];
     }
-    private int frame, taps;
-
-    private final Runnable loop = this::step;
 
     // ------------------------------------------------------------------ ciclo di vita
     @Override
@@ -143,8 +157,8 @@ public class BotService extends AccessibilityService {
         status = new TextView(this);
         status.setTextColor(Color.WHITE);
         status.setTextSize(10);
-        status.setMaxLines(3);
-        status.setMaxWidth((int) (getResources().getDisplayMetrics().widthPixels * 0.62));
+        status.setMaxLines(4);
+        status.setMaxWidth((int) (getResources().getDisplayMetrics().widthPixels * 0.55));
         status.setText("Tocca ▶ per avviare\nTieni premuto ▶ = salva screenshot");
         box.addView(status);
 
@@ -156,7 +170,8 @@ public class BotService extends AccessibilityService {
                         | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
                 PixelFormat.TRANSLUCENT);
         lp.gravity = Gravity.TOP | Gravity.START;
-        lp.x = 0;
+        // a destra della scritta "Livello N" (serve leggerla per sapere il livello)
+        lp.x = (int) (getResources().getDisplayMetrics().widthPixels * 0.29);
         lp.y = 0;
 
         handle.setOnTouchListener(new View.OnTouchListener() {
@@ -284,7 +299,8 @@ public class BotService extends AccessibilityService {
         Screens.Result scr = st.beltFree < 0 ? Screens.classify(px, w, h) : null;
         boolean fresh = st.beltFree >= 0 && st.beltFree == (st.beltCap > 0 ? st.beltCap : 5)
                 && st.freeSlots() == st.slots.size();
-        tracker.update(st.beltFree >= 0, fresh, scr != null ? scr.name : null, Screens.levelNumber(px, w, h, scr));
+        tracker.update(st.beltFree >= 0, fresh, scr != null ? scr.name : null,
+                Screens.levelNumber(px, w, h, scr, st.beltFree >= 0));
         strategy.guide = guideFor(tracker.level);
         Strategy.Decision d0 = strategy.decide(st);
         frame++;
@@ -294,10 +310,11 @@ public class BotService extends AccessibilityService {
         boolean settling = levelStreak < 2 || android.os.SystemClock.uptimeMillis() - lastScreenTap < 4000;
         Strategy.Decision d = (!d0.moves.isEmpty() && settling)
                 ? new Strategy.Decision(new java.util.ArrayList<>(), "aspetto che il livello sia pronto") : d0;
+        String guideTxt = Guide.describe(strategy.guide);
         String text = frame + ": " + d.reason
                 + "\nliv. " + (tracker.level > 0 ? tracker.level : "?")
-                + (followGuide ? " · guida: " + Guide.describe(strategy.guide) : "")
-                + " · esposti: " + fmt(st.exposed)
+                + (followGuide ? " · guida: " + (guideTxt.equals("-") ? guideStatus : guideTxt) : "")
+                + "\nesposti: " + fmt(st.exposed)
                 + "\nposti sul nastro " + (st.beltFree >= 0 ? st.beltFree : "?") + " · slot liberi "
                 + st.freeSlots() + " · tocchi " + taps;
         // Riprova / Continua / X / "Livello N": solo se attivato e se la schermata e' stabile
