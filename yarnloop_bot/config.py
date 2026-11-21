@@ -28,10 +28,16 @@ class Config:
     slot_x: list = field(default_factory=lambda: [round(x / REF_W, 4) for x in (190, 365, 540, 715, 890)])
     # Griglia dei rocchetti (esclusa la barra dei bonus in basso!)
     grid: list = field(default_factory=lambda: _r(100, 1680, 980, 2110))
+    # Maglia della griglia: centro delle colonne, distanza tra colonne, centro del tappo della 1a riga
+    grid_center_x: float = 0.5
+    col_pitch: float = round(175 / REF_W, 4)
+    first_cap_y: float = round(1735 / REF_H, 4)
+    # Pezzi del disegno piu' piccoli di cosi' (in celle) vengono ignorati (numeri, scritte)
+    min_part_cells: int = 5
     # Larghezza di un rocchetto (frazione della larghezza)
     spool_w: float = round(125 / REF_W, 4)
     # Distanza verticale tra due rocchetti nella stessa colonna
-    spool_pitch: float = round(190 / REF_H, 4)
+    spool_pitch: float = round(187 / REF_H, 4)
     # Percorso del nastro: rettangolo che passa a meta' della corsia
     belt: list = field(default_factory=lambda: _r(105, 290, 975, 1330))
     # Zone del nastro da ignorare (i cancelli arancioni e il contatore "2/5")
@@ -44,6 +50,8 @@ class Config:
     idle_delay: float = 0.6       # attesa quando non c'e' niente da fare
     recent_window: float = 2.5    # per quanti secondi un rocchetto appena toccato conta come "sul nastro"
     reserve_slots: int = 1        # slot da lasciare sempre liberi quando si scava
+    tap_check: float = 0.45       # dopo quanto controllare se il rocchetto toccato e' partito
+    block_time: float = 6.0       # per quanto evitare un rocchetto che non e' partito
     # Tocco da fare quando non si vede nessun livello (es. pulsante "Continua"). null = disattivato
     idle_tap: list | None = None
     idle_tap_after: int = 6       # cicli vuoti prima di usare idle_tap

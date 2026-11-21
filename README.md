@@ -11,8 +11,17 @@ Come ragiona:
 3. **Slot** – se un rocchetto negli slot di attesa ha un colore che serve, lo rimette in gioco per primo
    (così gli slot non si riempiono).
 4. **Griglia** – altrimenti tocca il rocchetto in prima fila col colore più richiesto.
-5. **Sblocco** – se nessun colore utile è in prima fila, toglie il rocchetto che ne copre uno utile,
-   ma solo se ci sono abbastanza slot liberi.
+5. **Scavo** – se nessun colore utile è in prima fila, toglie subito (senza aspettare il nastro)
+   i rocchetti che ne coprono uno utile, lasciando sempre uno slot libero.
+
+Regole speciali che conosce:
+
+- **Rocchetti collegati** da un'asta (anche negli slot): partono solo se sono entrambi in prima fila,
+  quindi il bot li tocca solo in quel caso e, se serve, scava in tutte e due le colonne.
+- **Distributori** (blocchi grigio-blu col numero): la loro colonna ha la precedenza; quello che c'è
+  dietro non si può raggiungere finché il distributore non si svuota.
+- **Lana bianca**: riconosciuta sia nel disegno sia nei rocchetti.
+- Se un rocchetto toccato **non parte**, il bot lo lascia stare per qualche secondo e prova altro.
 
 Non tocca mai la barra dei bonus in basso (quelli che costano monete).
 

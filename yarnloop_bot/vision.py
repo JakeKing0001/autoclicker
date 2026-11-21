@@ -18,6 +18,8 @@ class Spool:
     where: str      # "slot" o "grid"
     column: int = -1
     behind: list = field(default_factory=list)  # colori dei rocchetti dietro (solo griglia)
+    row: int = 0
+    index: int = -1                              # posizione nello slot
 
 
 @dataclass
@@ -30,6 +32,19 @@ class State:
     grid: list                  # list[Spool] (solo i rocchetti in prima fila)
     belt: Counter               # colore -> rocchetti visti sul nastro (i neri non si vedono)
     probes: list = field(default_factory=list)  # (x, y, colore) per il debug
+    # Griglia completa: cells[(colonna, riga)] = colore; posizioni x/y di colonne e righe
+    cells: dict = field(default_factory=dict)
+    col_x: list = field(default_factory=list)
+    row_y: list = field(default_factory=list)
+    links: dict = field(default_factory=dict)       # (col, riga) -> (col, riga) del compagno
+    slot_links: dict = field(default_factory=dict)  # indice slot -> indice slot collegato
+
+    def front_row(self, col):
+        rows = [r for (c, r) in self.cells if c == col]
+        return min(rows) if rows else None
+
+    def tap_point(self, col, row):
+        return int(self.col_x[col]), int(self.row_y[row] + 0.05 * (self.row_y[1] - self.row_y[0] if len(self.row_y) > 1 else 0))
 
     @property
     def free_slots(self) -> int:
@@ -60,6 +75,7 @@ class Analyzer:
         cell = max(4, int(self.cfg.cell * w))
         probe = max(2, int(cell * 0.45))
         step = max(2, cell // 4)
+        fg = _drop_small_parts(fg, cell, self.cfg.min_part_cells)
 
         remaining = Counter()
         # Colori totali: campiona una griglia fitta, raggruppata per cella
@@ -136,45 +152,143 @@ class Analyzer:
             cx = int(fx * w)
             patch = img[y0:y1, max(0, cx - half): cx + half]
             name, _ = C.dominant(patch, min_fraction=0.25)
-            out.append(Spool(name, cx, (y0 + y1) // 2, "slot") if name else None)
+            out.append(Spool(name, cx, (y0 + y1) // 2, "slot", index=len(out)) if name else None)
         return out
 
-    # ------------------------------------------------------------------ griglia
-    def grid(self, img: np.ndarray, cls: np.ndarray):
-        h, w = cls.shape
-        x0, y0, x1, y1 = _px(self.cfg.grid, w, h)
-        sub = cls[y0:y1, x0:x1]
-        ignored = [C.index(n) for n in C.IGNORED]
-        fg = ~np.isin(sub, ignored)
-        spool_w = int(self.cfg.spool_w * w)
-        pitch = int(self.cfg.spool_pitch * h)
+    def slot_links(self, img: np.ndarray, slots):
+        """Due rocchetti vicini negli slot uniti da una sbarretta."""
+        h, w = img.shape[:2]
+        _, y0, _, y1 = _px(self.cfg.slots, w, h)
+        links = {}
+        for i in range(len(slots) - 1):
+            a, b = slots[i], slots[i + 1]
+            if not a or not b:
+                continue
+            xm = (a.x + b.x) // 2
+            band = img[y0: y0 + (y1 - y0) // 2, xm - 4: xm + 5]
+            cls = C.classify(band)
+            colored = ~np.isin(cls, [C.index(n) for n in C.IGNORED])
+            # la sbarretta e' una striscia orizzontale: basta che alcune righe siano piene
+            if (colored.mean(axis=1) > 0.8).sum() >= max(3, int(0.006 * h)):
+                links[i], links[i + 1] = i + 1, i
+        return links
 
-        # Colonne: dove c'e' "roba" non grigia
-        prof = fg.mean(axis=0)
-        cols = _runs(prof > 0.12, min_len=spool_w // 2)
+    # ------------------------------------------------------------------ griglia
+    def grid_cells(self, img: np.ndarray):
+        """Legge la griglia dei rocchetti su una maglia fissa.
+
+        Le colonne sono centrate sullo schermo e distano `col_pitch`; con un numero pari di
+        colonne sono sfalsate di mezzo passo, quindi si provano entrambe le possibilita'.
+        Restituisce (lista di x delle colonne, matrice colori [riga][colonna]).
+        """
+        h, w = img.shape[:2]
+        _, gy0, _, gy1 = _px(self.cfg.grid, w, h)
+        cx0 = self.cfg.grid_center_x * w
+        pitch_x = self.cfg.col_pitch * w
+        pitch_y = self.cfg.spool_pitch * h
+        cap0 = self.cfg.first_cap_y * h
+        half = int(self.cfg.spool_w * w * 0.33)
+        rows = [cap0 + i * pitch_y for i in range(8) if cap0 + i * pitch_y - 0.25 * pitch_y < gy1]
+
+        def read(x, i):
+            y = rows[i]
+            if y + 0.5 * pitch_y < gy1:
+                # corpo del rocchetto (sotto il tappo, niente numeri)
+                ya, yb = int(y + 0.25 * pitch_y), int(y + 0.55 * pitch_y)
+            else:
+                # ultima riga mezza nascosta dalla barra: striscia in cima al tappo
+                ya, yb = int(y - 0.24 * pitch_y), int(y - 0.12 * pitch_y)
+            ya, yb = max(gy0, ya), min(gy1, yb)
+            if yb - ya < 4:
+                return None
+            x = int(x)
+            name, _ = C.dominant(img[ya:yb, max(0, x - half): x + half], min_fraction=0.3)
+            return name
+
+        best = None
+        for offset in (0.0, 0.5):
+            xs = []
+            for k in range(-4, 5):
+                x = cx0 + (k + offset) * pitch_x
+                if pitch_x * 0.4 < x < w - pitch_x * 0.4:
+                    xs.append(x)
+            xs = sorted(set(xs))
+            mat = [[read(x, i) for x in xs] for i in range(len(rows))]
+            filled = sum(1 for r in mat[:2] for v in r if v)
+            if best is None or filled > best[0]:
+                best = (filled, xs, mat)
+        _, xs, mat = best
+        return xs, rows, mat
+
+    def links(self, img: np.ndarray, xs, rows, cells):
+        """Trova le aste che collegano due rocchetti di colonne vicine.
+
+        Si controllano tre punti lungo la retta tra i due rocchetti, nello spazio vuoto tra
+        le colonne (dove normalmente c'e' solo sfondo). Il compagno puo' anche essere in una
+        riga nascosta dalla barra in basso: in quel caso il suo colore e' sconosciuto (None).
+        """
+        h, w = img.shape[:2]
+        pitch_y = self.cfg.spool_pitch * h
+        r = max(3, int(0.005 * w))
+        gy1 = _px(self.cfg.grid, w, h)[3]
+        ign = [C.index(n) for n in ("bg", "cream", "black")]
+        n_rows = len(rows) + 2  # anche un paio di righe nascoste
+        row_y = [rows[0] + i * pitch_y for i in range(n_rows)]
+        cand = []
+        for c in range(len(xs) - 1):
+            for ra in range(n_rows):
+                for rb in range(max(0, ra - 3), min(n_rows, ra + 4)):
+                    a, b = (c, ra), (c + 1, rb)
+                    # almeno uno dei due deve essere visibile
+                    if a not in cells and b not in cells:
+                        continue
+                    if (a not in cells and ra < len(rows)) or (b not in cells and rb < len(rows)):
+                        continue  # un lato e' una casella vuota visibile
+                    ax, ay = xs[c], row_y[ra] + 0.3 * pitch_y
+                    bx, by = xs[c + 1], row_y[rb] + 0.3 * pitch_y
+                    vals, pts = [], []
+                    for t in (0.4, 0.5, 0.6):
+                        x, y = int(ax + (bx - ax) * t), int(ay + (by - ay) * t)
+                        if y + r >= gy1:
+                            continue
+                        patch = C.classify(img[y - r: y + r + 1, x - r: x + r + 1])
+                        vals.append(float((~np.isin(patch, ign)).mean()))
+                        pts.append((x, y))
+                    if len(vals) >= 2 and min(vals) > 0.75:
+                        visible = (a in cells) + (b in cells)
+                        cand.append((visible, len(vals), min(vals), a, b, pts))
+        links, used = {}, []
+        near = 0.025 * w
+        for _, _, _, a, b, pts in sorted(cand, key=lambda t: t[:3], reverse=True):
+            if a in links or b in links:
+                continue
+            # due aste non passano negli stessi punti: se si sovrappone a una gia' trovata, e' un falso
+            if any(abs(x - u) < near and abs(y - v) < near for x, y in pts for u, v in used):
+                continue
+            links[a], links[b] = b, a
+            used += pts
+        return links
+
+    def grid(self, img: np.ndarray, cls: np.ndarray = None):
+        xs, rows, mat = self.grid_cells(img)
+        self._last_grid = (xs, rows, mat)
         result = []
-        for ci, (a, b) in enumerate(cols):
-            cx = (a + b) // 2
-            strip = fg[:, max(0, cx - spool_w // 4): cx + spool_w // 4]
-            rows = strip.mean(axis=1) > 0.5
-            ry = np.flatnonzero(rows)
-            if len(ry) == 0:
-                continue
-            top = int(ry[0])
+        for ci, x in enumerate(xs):
             stack = []
-            y = top
-            while y + pitch * 0.5 < sub.shape[0]:
-                py0, py1 = y0 + y, y0 + min(sub.shape[0], y + int(pitch * 0.85))
-                patch = img[py0:py1, x0 + cx - spool_w // 2 + 8: x0 + cx + spool_w // 2 - 8]
-                name, _ = C.dominant(patch, min_fraction=0.2)
-                if not name:
-                    break
-                stack.append(name)
-                y += pitch
-            if not stack:
+            first = None
+            for i in range(len(rows)):
+                v = mat[i][ci]
+                if v is None:
+                    if stack:
+                        break
+                    continue
+                if first is None:
+                    first = i
+                stack.append(v)
+            if not stack or stack[0] == "generator":
                 continue
-            tap_y = y0 + top + int(pitch * 0.35)
-            result.append(Spool(stack[0], x0 + cx, tap_y, "grid", ci, stack[1:]))
+            tap_y = int(rows[first] + 0.05 * self.cfg.spool_pitch * img.shape[0])
+            result.append(Spool(stack[0], int(x), tap_y, "grid", ci, stack[1:], row=first))
         return result
 
     # ------------------------------------------------------------------ nastro
@@ -228,16 +342,56 @@ class Analyzer:
         img = np.ascontiguousarray(img[..., :3])
         cls = C.classify(img)
         exposed, remaining, probes = self.picture(img, cls)
+        slots = self.slots(img)
+        grid = self.grid(img, cls)
+        xs, rows, mat = self._last_grid
+        cells = {(c, r): mat[r][c] for r in range(len(rows)) for c in range(len(xs)) if mat[r][c]}
         return State(
             width=img.shape[1],
             height=img.shape[0],
             exposed=exposed,
             remaining=remaining,
-            slots=self.slots(img),
-            grid=self.grid(img, cls),
+            slots=slots,
+            grid=grid,
             belt=self.belt(img),
             probes=probes,
+            cells=cells,
+            col_x=xs,
+            row_y=rows,
+            links=self.links(img, xs, rows, cells),
+            slot_links=self.slot_links(img, slots),
         )
+
+
+def _drop_small_parts(fg: np.ndarray, cell: int, min_cells: int) -> np.ndarray:
+    """Toglie i pezzetti staccati dal disegno (es. i numeri bianchi dei rocchetti sul nastro)."""
+    H, W = fg.shape
+    gh, gw = (H + cell - 1) // cell, (W + cell - 1) // cell
+    pad = np.zeros((gh * cell, gw * cell), bool)
+    pad[:H, :W] = fg
+    occ = pad.reshape(gh, cell, gw, cell).mean(axis=(1, 3)) > 0.3
+    keep = np.zeros_like(occ)
+    seen = np.zeros_like(occ)
+    for sy in range(gh):
+        for sx in range(gw):
+            if not occ[sy, sx] or seen[sy, sx]:
+                continue
+            comp, todo = [], [(sy, sx)]
+            seen[sy, sx] = True
+            while todo:
+                y, x = todo.pop()
+                comp.append((y, x))
+                for dy in (-1, 0, 1):
+                    for dx in (-1, 0, 1):
+                        ny, nx = y + dy, x + dx
+                        if 0 <= ny < gh and 0 <= nx < gw and occ[ny, nx] and not seen[ny, nx]:
+                            seen[ny, nx] = True
+                            todo.append((ny, nx))
+            if len(comp) >= min_cells:
+                for y, x in comp:
+                    keep[y, x] = True
+    mask = np.repeat(np.repeat(keep, cell, axis=0), cell, axis=1)[:H, :W]
+    return fg & mask
 
 
 def _runs(mask: np.ndarray, min_len: int):

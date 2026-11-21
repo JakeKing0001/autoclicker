@@ -2,20 +2,24 @@
 
 Ogni pixel viene convertito in HSV e assegnato a un nome di colore.
 Le classi speciali sono:
-  "bg"    -> sfondo grigio del gioco (ignorato)
-  "white" -> numeri / bordi chiari (ignorato)
+  "bg"        -> sfondo grigio del gioco (ignorato)
+  "cream"     -> cornici color crema (ignorato)
+  "generator" -> distributore grigio-blu nella griglia dei rocchetti
 """
 from __future__ import annotations
 
 import numpy as np
 
-IGNORED = {"bg", "white"}
+IGNORED = {"bg", "cream"}
+SPECIAL = {"generator"}
 
 # Colore usato nelle immagini di debug per ogni classe
 DEBUG_RGB = {
     "black": (0, 0, 0),
     "white": (255, 255, 255),
     "bg": (90, 90, 90),
+    "cream": (250, 235, 180),
+    "generator": (100, 110, 165),
     "red": (230, 20, 20),
     "pink": (255, 150, 150),
     "skin": (235, 160, 110),
@@ -67,15 +71,18 @@ def classify(rgb: np.ndarray) -> np.ndarray:
     put((v < 0.20) | ((v < 0.30) & (s < 0.07)), "black")
     # Grigi / bianchi poco saturi
     low_sat = s < 0.22
-    put(low_sat & (v > 0.85), "white")
-    put((s < 0.33) & (v > 0.70), "white")  # crema delle cornici
+    # Lana bianca (anche in ombra): grigio neutro e chiaro. Lo sfondo e' piu' scuro e rosato.
+    put((s < 0.12) & (v >= 0.55), "white")
+    put((s < 0.33) & (v > 0.70), "cream")  # cornici crema e riflessi chiari
     put(low_sat, "bg")
+    # Distributore: blu-grigio spento
+    put((h >= 200) & (h < 260) & (s >= 0.22) & (s < 0.5) & (v < 0.78), "generator")
 
     hh = h
     # Rossi e rosa (stessa tinta, saturazione diversa)
     redish = (hh < 12) | (hh >= 345)
     put(redish & (s >= 0.75), "red")
-    put(((hh < 20) | (hh >= 330)) & (s < 0.75), "pink")
+    put(((hh < 20) | (hh >= 345)) & (s < 0.75), "pink")
     # Arancio / pelle / marrone
     orangish = (hh >= 12) & (hh < 42)
     put(orangish & (v < 0.60), "brown")
