@@ -33,14 +33,16 @@ def draw(img: Image.Image, state: State, cfg: Config, choice=None) -> Image.Imag
         if s.behind:
             d.text((s.x - 30, s.y + 36), "dietro: " + ",".join(s.behind), fill=(255, 255, 255))
 
-    if choice is not None:
-        d.ellipse((choice.x - 40, choice.y - 40, choice.x + 40, choice.y + 40), outline=(255, 0, 0), width=8)
+    for i, m in enumerate(choice or []):
+        sp = m.spool
+        d.ellipse((sp.x - 40, sp.y - 40, sp.x + 40, sp.y + 40), outline=(255, 0, 0), width=8)
+        d.text((sp.x + 42, sp.y - 40), str(i + 1), fill=(255, 0, 0))
 
     lines = [
         "esposti: " + ", ".join(f"{k}={v}" for k, v in state.exposed.most_common()),
         "nel disegno: " + ", ".join(f"{k}={v}" for k, v in state.remaining.most_common()),
         "nastro: " + ", ".join(f"{k}={v}" for k, v in state.belt.most_common()),
-        f"slot liberi: {state.free_slots}/{len(state.slots)}",
+        f"slot liberi: {state.free_slots}/{len(state.slots)}  posti liberi sul nastro: {state.belt_free}",
     ]
     y = 10
     for line in lines:

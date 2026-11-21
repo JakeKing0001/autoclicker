@@ -39,10 +39,19 @@ def test_exposed():
     assert ex["brown"] == 0 and ex["skin"] == 0  # marrone e pelle sono all'interno
 
 
-def test_decision_is_slot():
+def test_numbers():
+    st = _state()
+    assert st.belt_free == 2
+    assert [s.count if s else None for s in st.slots] == [7, 9, 5, None, None]
+    assert [g.count for g in st.grid] == [10, 10, 10, 10]
+
+
+def test_burst_fills_belt():
+    """Nastro con 2 posti liberi: due tocchi, prima gli slot che possono finire."""
     dec = Strategy(Config()).decide(_state())
-    assert dec.spool is not None and dec.spool.where == "slot"
-    assert dec.spool.color in ("green", "yellow")
+    assert len(dec.moves) == 2
+    assert all(m.spool.where == "slot" for m in dec.moves)
+    assert {m.spool.color for m in dec.moves} == {"green", "yellow"}
 
 
 def test_dig_without_waiting():
@@ -52,8 +61,9 @@ def test_dig_without_waiting():
     st.exposed = Counter({"pink": 10})       # il rosa e' dietro a giallo e marrone
     st.slots = [None] * 5
     st.belt = Counter({"red": 1})            # il nastro sta lavorando
+    st.belt_free = 1
     dec = Strategy(Config()).decide(st)
-    assert dec.spool is not None and dec.fast
+    assert len(dec.moves) == 1
     assert dec.spool.where == "grid" and dec.spool.color in ("yellow", "brown")
 
 
@@ -79,17 +89,22 @@ def test_33_links():
     assert st.links[(3, 0)] == (2, 3)       # arancio - rocchetto nascosto sotto la barra
 
 
-def test_33_decision():
+def test_33_numbers():
+    st = _state33()
+    assert st.belt_free == 4
+    assert [s.count if s else None for s in st.slots] == [11, 0, None, None, None]
+    assert st.counts[(1, 0)] == 40 and st.counts[(1, 1)] == 3  # bianco 40, distributore 3
+
+
+def test_33_burst():
     st = _state33()
     dec = Strategy(Config()).decide(st)
-    # bianco+rosso negli slot servono (il bianco e' molto esposto)
-    assert dec.spool is not None and dec.spool.where == "slot"
-    # senza slot: il bianco davanti al distributore ha la precedenza,
-    # l'arancio collegato a un rocchetto nascosto non si puo' toccare
-    st.slots = [None] * 5
-    st.slot_links = {}
-    dec = Strategy(Config()).decide(st)
-    assert (dec.spool.x, dec.spool.color) == (365, "white"), dec
+    keys = [(m.spool.where, m.spool.x) for m in dec.moves]
+    # 4 posti: rosso+bianco collegati negli slot (2 posti), il bianco del distributore,
+    # l'arancio libero; l'arancio collegato a un rocchetto nascosto no
+    assert sum(m.seats for m in dec.moves) == 4, dec
+    assert dec.moves[0].spool.where == "slot" and dec.moves[0].seats == 2
+    assert ("grid", 365) in keys and ("grid", 540) in keys and ("grid", 714) not in keys
 
 
 if __name__ == "__main__":

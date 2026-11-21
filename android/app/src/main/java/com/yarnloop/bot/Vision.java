@@ -66,6 +66,7 @@ public final class Vision {
         public final int color, x, y;
         public final boolean slot;
         public final int index; // posizione nello slot, oppure colonna
+        public int count = -1;  // numero scritto sul rocchetto (lana che manca), -1 = non letto
 
         Spool(int color, int x, int y, boolean slot, int index) {
             this.color = color;
@@ -89,6 +90,10 @@ public final class Vision {
         public int visibleRows;
         /** Collegamenti: chiave colonna*100+riga -> compagno. */
         public final Map<Integer, Integer> links = new HashMap<>();
+        /** Numeri letti in prima fila e sui distributori: colonna*100+riga -> numero. */
+        public final Map<Integer, Integer> counts = new HashMap<>();
+        /** Posti liberi sul nastro (contatore "N/5"), -1 = non letto. */
+        public int beltFree = -1;
 
         public int freeSlots() {
             int n = 0;
@@ -130,6 +135,8 @@ public final class Vision {
     static final float SPOOL_W = 125f / 1080f;
     static final float SPOOL_PITCH = 187f / 2340f;
     static final float[] BELT = r(105, 290, 975, 1330);
+    static final float[] COUNTER = r(40, 1270, 185, 1390);
+    static final float DIGIT_H = 0.034f;
     static final float[][] BELT_IGNORE = {r(30, 1140, 185, 1395), r(185, 1250, 290, 1400)};
 
     private static float[] r(int x0, int y0, int x1, int y1) {
@@ -139,8 +146,10 @@ public final class Vision {
     // ------------------------------------------------------------------ immagine
     private final int w, h;
     private final byte[] cls;
+    private final int[] px;
 
     public Vision(int[] pixels, int width, int height) {
+        this.px = pixels;
         this.w = width;
         this.h = height;
         this.cls = new byte[pixels.length];
@@ -196,7 +205,28 @@ public final class Vision {
         grid(st);
         links(st);
         belt(st);
+        numbers(st);
         return st;
+    }
+
+    // ------------------------------------------------------------------ numeri
+    private void numbers(State st) {
+        float dh = DIGIT_H * w;
+        int[] C = rect(COUNTER);
+        st.beltFree = Digits.readInt(px, w, h, C[0], C[1], C[2], C[3], dh);
+        int[] S = rect(SLOTS);
+        int hw = (int) (SPOOL_W * w / 2);
+        for (Spool s : st.slots)
+            if (s != null)
+                s.count = Digits.readInt(px, w, h, s.x - hw, (int) (S[1] - 0.017f * h), s.x + hw, (int) (S[1] + 0.034f * h), dh);
+        int halfH = (int) (0.27f * SPOOL_PITCH * h);
+        for (int c = 0; c < st.cells.length; c++)
+            for (int r = 0; r < st.visibleRows; r++) {
+                int v = st.cells[c][r];
+                if (v < 0 || (v != GEN && st.front(c) != r)) continue;
+                int n = Digits.readInt(px, w, h, st.colX[c] - hw, st.rowY[r] - halfH, st.colX[c] + hw, st.rowY[r] + halfH, dh);
+                if (n >= 0) st.counts.put(c * 100 + r, n);
+            }
     }
 
     // ------------------------------------------------------------------ disegno

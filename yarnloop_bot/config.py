@@ -38,6 +38,9 @@ class Config:
     spool_w: float = round(125 / REF_W, 4)
     # Distanza verticale tra due rocchetti nella stessa colonna
     spool_pitch: float = round(187 / REF_H, 4)
+    # Contatore dei posti liberi sul nastro ("2/5") e altezza delle cifre (frazione della larghezza)
+    counter: list = field(default_factory=lambda: _r(40, 1270, 185, 1390))
+    digit_h: float = 0.034
     # Percorso del nastro: rettangolo che passa a meta' della corsia
     belt: list = field(default_factory=lambda: _r(105, 290, 975, 1330))
     # Zone del nastro da ignorare (i cancelli arancioni e il contatore "2/5")
@@ -45,8 +48,8 @@ class Config:
     # Comportamento
     max_on_belt: int = 5          # non lanciare altri rocchetti se sul nastro ce ne sono gia' tanti
     yarn_per_spool: int = 8       # stima di quanta lana raccoglie un rocchetto sul nastro
-    tap_delay: float = 0.35       # attesa dopo ogni tocco (secondi)
-    dig_delay: float = 0.2        # attesa dopo una mossa di scavo
+    tap_gap: float = 0.12         # pausa tra due tocchi della stessa raffica (secondi)
+    after_burst: float = 0.5      # pausa dopo una raffica, prima del prossimo screenshot
     idle_delay: float = 0.6       # attesa quando non c'e' niente da fare
     recent_window: float = 2.5    # per quanti secondi un rocchetto appena toccato conta come "sul nastro"
     reserve_slots: int = 1        # slot da lasciare sempre liberi quando si scava

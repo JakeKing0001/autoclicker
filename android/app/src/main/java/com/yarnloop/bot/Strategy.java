@@ -4,30 +4,44 @@ import android.os.SystemClock;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
- * Sceglie quale rocchetto toccare.
- * <ul>
- * <li>si puo' toccare solo il primo rocchetto di ogni colonna;</li>
- * <li>due rocchetti collegati da un'asta partono solo se sono entrambi in prima fila;</li>
- * <li>il distributore (blocco grigio) sforna rocchetti nella casella davanti: la sua colonna ha la
- * precedenza e cio' che sta dietro non si raggiunge;</li>
- * <li>se un rocchetto toccato non parte, per un po' viene lasciato stare.</li>
- * </ul>
+ * Sceglie quali rocchetti toccare (come yarnloop_bot/strategy.py).
+ * <p>
+ * Tattica: tenere il nastro sempre pieno. Ad ogni screenshot si toccano subito tanti rocchetti
+ * quanti sono i posti liberi sul nastro (contatore "N/5"): prima gli slot (prima chi puo' finire),
+ * poi la prima fila con colori esposti (prima il distributore), poi lo scavo (uno per colonna),
+ * tenendo sempre almeno uno slot libero.
  */
 public final class Strategy {
 
-    public static final class Decision {
+    public static final class Move {
         public final Vision.Spool spool;
-        public final String reason;
-        public final boolean fast;
+        final String key;
+        final int[] colors;
+        final boolean refills;
+        final int seats;
 
-        Decision(Vision.Spool spool, String reason, boolean fast) {
+        Move(Vision.Spool spool, String key, int[] colors, boolean refills) {
             this.spool = spool;
+            this.key = key;
+            this.colors = colors;
+            this.refills = refills;
+            this.seats = colors.length;
+        }
+    }
+
+    public static final class Decision {
+        public final List<Move> moves;
+        public final String reason;
+
+        Decision(List<Move> moves, String reason) {
+            this.moves = moves;
             this.reason = reason;
-            this.fast = fast;
         }
     }
 
@@ -54,27 +68,19 @@ public final class Strategy {
         }
     }
 
-    private final List<long[]> sent = new ArrayList<>();      // {tempo, colore}
+    private final List<long[]> sent = new ArrayList<>();      // {tempo, colore, lana}
     private final List<Tap> pending = new ArrayList<>();
     private final Map<String, Long> blocked = new HashMap<>();
-    private Tap lastChoice;
 
     // ------------------------------------------------------------------ memoria
-    public void remember(Vision.Spool s) {
-        if (lastChoice == null) return;
+    public synchronized void remember(Move m) {
         long now = SystemClock.uptimeMillis();
-        pending.add(new Tap(lastChoice.key, lastChoice.colors, now, lastChoice.refills));
-        for (int c : lastChoice.colors) if (c >= 0) sent.add(new long[]{now, c});
+        pending.add(new Tap(m.key, m.colors, now, m.refills));
+        int n = m.spool.count >= 0 ? m.spool.count : yarnPerSpool;
+        for (int c : m.colors) if (c >= 0) sent.add(new long[]{now, c, n});
     }
 
-    private int[] recent(long now) {
-        sent.removeIf(e -> now - e[0] >= recentWindowMs);
-        int[] r = new int[Vision.N];
-        for (long[] e : sent) r[(int) e[1]]++;
-        return r;
-    }
-
-    private void checkPending(java.util.Set<String> present, long now) {
+    private void checkPending(Set<String> present, long now) {
         for (int i = pending.size() - 1; i >= 0; i--) {
             Tap p = pending.get(i);
             if (now - p.t < tapCheckMs) continue;
@@ -117,7 +123,6 @@ public final class Strategy {
         return v >= 0 && v != Vision.GEN && st.front(col) == row;
     }
 
-    /** Celle che partono toccando (col,row), oppure null se ora non si puo'. */
     private static int[] group(Vision.State st, int col, int row) {
         if (!isFront(st, col, row)) return null;
         Integer o = st.links.get(enc(col, row));
@@ -133,34 +138,32 @@ public final class Strategy {
         return Math.max(0, row - f);
     }
 
-    private static boolean beforeGenerator(Vision.State st, int[] group) {
-        for (int g : group) if (st.cell(g / 100, g % 100 + 1) == Vision.GEN) return true;
+    private Move gridMove(Vision.State st, int col, int row) {
+        int[] g = group(st, col, row);
+        int[] colors = new int[g.length];
+        boolean refills = false;
+        for (int i = 0; i < g.length; i++) {
+            colors[i] = st.cell(g[i] / 100, g[i] % 100);
+            if (st.cell(g[i] / 100, g[i] % 100 + 1) == Vision.GEN) refills = true;
+        }
+        int pitch = st.rowY.length > 1 ? st.rowY[1] - st.rowY[0] : 0;
+        Vision.Spool sp = new Vision.Spool(st.cell(col, row), st.colX[col], st.rowY[row] + pitch / 20, false, col);
+        Integer n = st.counts.get(enc(col, row));
+        if (n != null) sp.count = n;
+        return new Move(sp, gridKey(st, col, row), colors, refills);
+    }
+
+    private static boolean anyExposed(Vision.State st, int[] colors) {
+        for (int c : colors) if (c >= 0 && st.exposed[c] > 0) return true;
         return false;
     }
 
-    private static int[] colorsOf(Vision.State st, int[] group) {
-        int[] c = new int[group.length];
-        for (int i = 0; i < group.length; i++) c[i] = st.cell(group[i] / 100, group[i] % 100);
-        return c;
-    }
-
-    private static Vision.Spool spool(Vision.State st, int col, int row) {
-        int pitch = st.rowY.length > 1 ? st.rowY[1] - st.rowY[0] : 0;
-        return new Vision.Spool(st.cell(col, row), st.colX[col], st.rowY[row] + pitch / 20, false, col);
-    }
-
-    private static String names(int[] colors) {
-        StringBuilder sb = new StringBuilder();
-        for (int c : colors) if (c >= 0) sb.append(sb.length() > 0 ? "+" : "").append(Vision.NAMES[c]);
-        return sb.toString();
-    }
-
     // ------------------------------------------------------------------ decisione
-    public Decision decide(Vision.State st) {
+    public synchronized Decision decide(Vision.State st) {
         long now = SystemClock.uptimeMillis();
-        lastChoice = null;
+        List<Move> moves = new ArrayList<>();
 
-        java.util.Set<String> present = new java.util.HashSet<>();
+        Set<String> present = new HashSet<>();
         for (Vision.Spool s : st.slots) if (s != null) present.add(slotKey(s));
         List<int[]> fronts = new ArrayList<>();
         for (int c = 0; c < st.cells.length; c++) {
@@ -172,77 +175,83 @@ public final class Strategy {
         }
         checkPending(present, now);
 
-        int[] rec = recent(now);
-        int[] need = new int[Vision.N];
-        int onBelt = 0;
-        for (int c = 0; c < Vision.N; c++) {
-            int b = Math.max(st.belt[c], rec[c]);
-            onBelt += b;
-            need[c] = st.exposed[c] - b * yarnPerSpool;
+        if (!st.levelVisible()) return new Decision(moves, "nessun livello visibile");
+
+        sent.removeIf(e -> now - e[0] >= recentWindowMs);
+        int[] recent = new int[Vision.N];
+        int[] taken = new int[Vision.N];
+        for (long[] e : sent) {
+            recent[(int) e[1]]++;
+            taken[(int) e[1]] += (int) e[2];
         }
+        int seats;
+        if (st.beltFree >= 0) {
+            seats = st.beltFree;
+        } else {
+            int on = 0;
+            for (int c = 0; c < Vision.N; c++) on += Math.max(st.belt[c], recent[c]);
+            seats = maxOnBelt - on;
+        }
+        if (seats <= 0) return new Decision(moves, "nastro pieno");
 
-        if (!st.levelVisible()) return new Decision(null, "nessun livello visibile", false);
-        if (onBelt >= maxOnBelt) return new Decision(null, "nastro pieno (" + onBelt + ")", false);
+        int[] avail = new int[Vision.N];
+        for (int c = 0; c < Vision.N; c++) avail[c] = st.exposed[c] - taken[c];
+        int spare = st.freeSlots() - reserveSlots;
+        Set<Integer> doneSlots = new HashSet<>(), doneCols = new HashSet<>();
 
-        // 1) rimetti in gioco i rocchetti negli slot
-        boolean urgent = st.freeSlots() <= 1;
-        Vision.Spool bestSlot = null;
-        int[] bestSlotColors = null;
-        int bestGain = -1, bestExp = -1;
+        // 1) slot: rimetti in giro tutto quello che ha lana esposta, prima chi puo' finire
+        List<Object[]> cands = new ArrayList<>(); // {chiave ordinamento long, Spool, colori}
         for (Vision.Spool s : st.slots) {
             if (s == null || !usable(slotKey(s), now)) continue;
             Integer j = st.slotLinks.get(s.index);
-            int[] colors = (j != null && st.slots.get(j) != null)
-                    ? new int[]{s.color, st.slots.get(j).color} : new int[]{s.color};
-            int gain = 0, exp = 0;
-            for (int c : colors) {
-                gain += Math.max(0, need[c]);
-                exp += st.exposed[c];
-            }
-            if (exp <= 0 || (gain <= 0 && !urgent)) continue;
-            if (gain > bestGain || (gain == bestGain && exp > bestExp)) {
-                bestSlot = s;
-                bestSlotColors = colors;
-                bestGain = gain;
-                bestExp = exp;
-            }
+            Vision.Spool partner = (j != null) ? st.slots.get(j) : null;
+            int[] colors = partner != null ? new int[]{s.color, partner.color} : new int[]{s.color};
+            if (!anyExposed(st, colors)) continue;
+            int n = s.count >= 0 ? s.count : yarnPerSpool;
+            boolean finishes = n <= avail[s.color];
+            long score = finishes ? 1_000_000L - n : st.exposed[s.color];
+            cands.add(new Object[]{score, s, colors, partner});
         }
-        if (bestSlot != null) {
-            lastChoice = new Tap(slotKey(bestSlot), bestSlotColors, now, false);
-            return new Decision(bestSlot, "slot: " + names(bestSlotColors), false);
+        cands.sort((a, b) -> Long.compare((long) b[0], (long) a[0]));
+        for (Object[] k : cands) {
+            Vision.Spool s = (Vision.Spool) k[1];
+            if (doneSlots.contains(s.index)) continue;
+            int[] colors = (int[]) k[2];
+            if (colors.length > seats) continue;
+            Move m = new Move(s, slotKey(s), colors, false);
+            moves.add(m);
+            seats -= m.seats;
+            for (int c : colors) avail[c] -= s.count >= 0 ? s.count : yarnPerSpool;
+            doneSlots.add(s.index);
+            if (k[3] != null) doneSlots.add(((Vision.Spool) k[3]).index);
         }
 
-        // 2) prima fila con un colore che serve (precedenza al distributore)
-        int[] best = null, bestGroup = null;
-        long bestScore = Long.MIN_VALUE;
+        // 2) prima fila con colore esposto (prima il distributore, poi chi serve di piu')
+        cands.clear();
         for (int[] f : fronts) {
             int[] g = group(st, f[0], f[1]);
             if (g == null || !usable(gridKey(st, f[0], f[1]), now)) continue;
+            Move m = gridMove(st, f[0], f[1]);
+            if (!anyExposed(st, m.colors)) continue;
             int gain = 0;
-            for (int c : colorsOf(st, g)) gain += Math.max(0, need[c]);
-            if (gain <= 0) continue;
-            int behind = 0;
-            for (int r = 1; r <= 2; r++) {
-                int v = st.cell(f[0], f[1] + r);
-                if (v >= 0 && st.exposed[v] > 0) behind++;
-            }
-            long score = (beforeGenerator(st, g) ? 1_000_000L : 0) + gain * 10L + behind;
-            if (score > bestScore) {
-                bestScore = score;
-                best = f;
-                bestGroup = g;
-            }
+            for (int c : m.colors) gain += Math.max(0, avail[c]);
+            cands.add(new Object[]{(m.refills ? 1_000_000L : 0) + gain, m, g});
         }
-        if (best != null) {
-            boolean gen = beforeGenerator(st, bestGroup);
-            lastChoice = new Tap(gridKey(st, best[0], best[1]), colorsOf(st, bestGroup), now, gen);
-            return new Decision(spool(st, best[0], best[1]),
-                    "griglia: " + names(colorsOf(st, bestGroup)) + (gen ? " (distributore)" : ""), false);
+        cands.sort((a, b) -> Long.compare((long) b[0], (long) a[0]));
+        for (Object[] k : cands) {
+            Move m = (Move) k[1];
+            int[] g = (int[]) k[2];
+            boolean clash = false;
+            for (int e : g) if (doneCols.contains(e / 100)) clash = true;
+            if (clash || m.seats > seats) continue;
+            moves.add(m);
+            seats -= m.seats;
+            for (int c : m.colors) avail[c] -= m.spool.count >= 0 ? m.spool.count : yarnPerSpool;
+            for (int e : g) doneCols.add(e / 100);
         }
 
-        // 3) scavo: togli subito i rocchetti che coprono un colore utile
-        int[] move = null;
-        int moveCost = INF, moveTarget = -1;
+        // 3) scavo: togli i rocchetti che coprono un colore utile (uno per colonna)
+        List<int[]> plans = new ArrayList<>(); // {costo, -avail, colonna, riga, colore}
         for (int c = 0; c < st.cells.length; c++)
             for (int r = 0; r < st.visibleRows; r++) {
                 int color = st.cell(c, r);
@@ -255,53 +264,58 @@ public final class Strategy {
                 int cost = 0;
                 for (int[] p : parts) cost += depth(st, p[0], p[1]);
                 if (cost >= INF) continue;
-                int[] m = null;
                 for (int[] p : parts) {
                     if (depth(st, p[0], p[1]) <= 0) continue;
                     int fr = st.front(p[0]);
                     if (group(st, p[0], fr) != null && usable(gridKey(st, p[0], fr), now)) {
-                        m = new int[]{p[0], fr};
+                        plans.add(new int[]{cost, -avail[color], p[0], fr, color});
                         break;
                     }
                 }
-                if (m == null) continue;
-                if (cost < moveCost || (cost == moveCost && need[color] > need[moveTarget])) {
-                    move = m;
-                    moveCost = cost;
-                    moveTarget = color;
-                }
             }
-        if (move != null && moveCost <= st.freeSlots() - reserveSlots) {
-            int[] g = group(st, move[0], move[1]);
-            lastChoice = new Tap(gridKey(st, move[0], move[1]), colorsOf(st, g), now, beforeGenerator(st, g));
-            return new Decision(spool(st, move[0], move[1]),
-                    "scavo: tolgo " + names(colorsOf(st, g)) + " per " + Vision.NAMES[moveTarget], true);
+        plans.sort((a, b) -> a[0] != b[0] ? Integer.compare(a[0], b[0]) : Integer.compare(a[1], b[1]));
+        for (int[] p : plans) {
+            if (doneCols.contains(p[2]) || p[0] > spare) continue;
+            Move m = gridMove(st, p[2], p[3]);
+            boolean useless = !anyExposed(st, m.colors);
+            if (useless && spare <= 0) continue;
+            if (m.seats > seats) continue;
+            moves.add(m);
+            seats -= m.seats;
+            for (int e : group(st, p[2], p[3])) doneCols.add(e / 100);
+            if (useless) spare--;
         }
 
-        if (onBelt > 0) return new Decision(null, "aspetto che il nastro lavori", false);
-
-        // 4) ultimo tentativo: distributore, poi il colore con piu' lana rimasta
-        if (st.freeSlots() >= reserveSlots + 2) {
-            best = null;
-            bestScore = 0;
+        // 4) niente da fare e nastro vuoto: distributore o il colore che c'e' di piu'
+        int onBelt = 0;
+        for (int c = 0; c < Vision.N; c++) onBelt += recent[c] + st.belt[c];
+        if (moves.isEmpty() && onBelt == 0 && st.freeSlots() >= reserveSlots + 2) {
+            Move best = null;
+            long bestScore = 0;
             for (int[] f : fronts) {
-                int[] g = group(st, f[0], f[1]);
-                if (g == null || !usable(gridKey(st, f[0], f[1]), now)) continue;
-                int rem = 0;
-                for (int c : colorsOf(st, g)) rem += st.remaining[c];
-                long score = (beforeGenerator(st, g) ? 1_000_000L : 0) + rem;
+                if (group(st, f[0], f[1]) == null || !usable(gridKey(st, f[0], f[1]), now)) continue;
+                Move m = gridMove(st, f[0], f[1]);
+                long score = m.refills ? 1_000_000L : 0;
+                for (int c : m.colors) score += st.remaining[c];
                 if (score > bestScore) {
                     bestScore = score;
-                    best = f;
-                    bestGroup = g;
+                    best = m;
                 }
             }
-            if (best != null) {
-                lastChoice = new Tap(gridKey(st, best[0], best[1]), colorsOf(st, bestGroup), now,
-                        beforeGenerator(st, bestGroup));
-                return new Decision(spool(st, best[0], best[1]), "tentativo: " + names(colorsOf(st, bestGroup)), true);
-            }
+            if (best != null && best.seats <= seats) moves.add(best);
         }
-        return new Decision(null, "nessuna mossa sicura", false);
+
+        if (moves.isEmpty())
+            return new Decision(moves, onBelt > 0 ? "aspetto che il nastro lavori" : "nessuna mossa sicura");
+        StringBuilder sb = new StringBuilder().append(moves.size()).append(" tocchi: ");
+        for (int i = 0; i < moves.size(); i++) {
+            Move m = moves.get(i);
+            if (i > 0) sb.append(", ");
+            for (int k = 0; k < m.colors.length; k++)
+                sb.append(k > 0 ? "+" : "").append(m.colors[k] >= 0 ? Vision.NAMES[m.colors[k]] : "?");
+            if (m.spool.count >= 0) sb.append(' ').append(m.spool.count);
+            if (m.spool.slot) sb.append(" (slot)");
+        }
+        return new Decision(moves, sb.toString());
     }
 }

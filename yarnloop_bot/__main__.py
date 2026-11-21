@@ -57,15 +57,17 @@ def cmd_run(args):
                 f"slot liberi {st.free_slots} -> {dec.reason}"
             )
             if args.save_debug:
-                draw(img, st, cfg, dec.spool).save(os.path.join(args.save_debug, f"{frame:05d}.jpg"), quality=70)
+                draw(img, st, cfg, dec.moves).save(os.path.join(args.save_debug, f"{frame:05d}.jpg"), quality=70)
 
-            if dec.spool is not None:
+            if dec.moves:
                 idle = 0
-                if not args.dry_run:
-                    dev.tap(dec.spool.x, dec.spool.y)
-                    strat.remember(dec.spool)
-                    taps += 1
-                time.sleep(cfg.dig_delay if dec.fast else cfg.tap_delay)
+                for m in dec.moves:
+                    if not args.dry_run:
+                        dev.tap(m.spool.x, m.spool.y)
+                        strat.remember(m)
+                        taps += 1
+                    time.sleep(cfg.tap_gap)
+                time.sleep(cfg.after_burst)
                 continue
 
             if not st.level_visible:
@@ -92,10 +94,13 @@ def cmd_analyze(args):
     print("Sul nastro:                       ", _fmt(st.belt))
     print("Slot:", [s.color if s else "vuoto" for s in st.slots])
     for s in st.grid:
-        print(f"Colonna {s.column}: davanti {s.color}, dietro {s.behind or '-'}  (tocco a {s.x},{s.y})")
-    print("Mossa scelta:", dec.reason, f"-> tocco ({dec.spool.x},{dec.spool.y})" if dec.spool else "")
+        print(f"Colonna {s.column}: davanti {s.color} {s.count if s.count is not None else ''}, dietro {s.behind or '-'}  (tocco a {s.x},{s.y})")
+    print("Posti liberi sul nastro:", st.belt_free)
+    print("Mosse scelte:", dec.reason)
+    for m in dec.moves:
+        print(f"   tocco ({m.spool.x},{m.spool.y}) {'+'.join(m.colors)}")
     out = args.output or os.path.splitext(args.image)[0] + "_debug.png"
-    draw(img, st, cfg, dec.spool).save(out)
+    draw(img, st, cfg, dec.moves).save(out)
     print("Immagine di debug salvata in", out)
 
 

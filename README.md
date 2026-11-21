@@ -3,7 +3,8 @@
 Bot che gioca da solo a **Yarn Loop** su Android. Non tocca a caso: ad ogni turno fa uno
 screenshot del telefono, capisce la situazione e tocca il rocchetto giusto.
 
-Come ragiona:
+Come ragiona (tattica "a raffica": il nastro deve essere sempre pieno, ad ogni screenshot
+tocca tanti rocchetti quanti sono i posti liberi indicati dal contatore "N/5"):
 
 1. **Disegno** – guarda i blocchi di lana sul bordo del disegno, cioè quelli che i rocchetti
    sul nastro possono raggiungere (da sopra, sotto, sinistra e destra), e li conta per colore.
@@ -22,6 +23,10 @@ Regole speciali che conosce:
   dietro non si può raggiungere finché il distributore non si svuota.
 - **Lana bianca**: riconosciuta sia nel disegno sia nei rocchetti.
 - Se un rocchetto toccato **non parte**, il bot lo lascia stare per qualche secondo e prova altro.
+- **Numeri**: legge il contatore dei posti liberi sul nastro, la lana che manca a ogni rocchetto
+  (slot e prima fila) e quanti rocchetti restano nei distributori. Negli slot rimette in giro per primi
+  quelli che possono finire (numero ≤ lana esposta). I modelli delle cifre si rigenerano con
+  `python tools/make_digits.py`.
 
 Non tocca mai la barra dei bonus in basso (quelli che costano monete).
 

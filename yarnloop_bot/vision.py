@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from . import colors as C
+from . import digits as D
 from .config import Config
 
 
@@ -20,6 +21,7 @@ class Spool:
     behind: list = field(default_factory=list)  # colori dei rocchetti dietro (solo griglia)
     row: int = 0
     index: int = -1                              # posizione nello slot
+    count: int | None = None                     # numero scritto sul rocchetto (lana che manca)
 
 
 @dataclass
@@ -38,6 +40,8 @@ class State:
     row_y: list = field(default_factory=list)
     links: dict = field(default_factory=dict)       # (col, riga) -> (col, riga) del compagno
     slot_links: dict = field(default_factory=dict)  # indice slot -> indice slot collegato
+    belt_free: int | None = None                    # posti liberi sul nastro (contatore "N/5")
+    counts: dict = field(default_factory=dict)      # (col, riga) -> numero letto (prima fila e distributori)
 
     def front_row(self, col):
         rows = [r for (c, r) in self.cells if c == col]
@@ -346,6 +350,26 @@ class Analyzer:
         grid = self.grid(img, cls)
         xs, rows, mat = self._last_grid
         cells = {(c, r): mat[r][c] for r in range(len(rows)) for c in range(len(xs)) if mat[r][c]}
+        h, w = img.shape[:2]
+        dh = self.cfg.digit_h * w
+        cx0, cy0, cx1, cy1 = _px(self.cfg.counter, w, h)
+        belt_free = D.read_int(img[cy0:cy1, cx0:cx1], dh)
+        sx0, sy0, sx1, sy1 = _px(self.cfg.slots, w, h)
+        hw = int(self.cfg.spool_w * w / 2)
+        for sp in slots:
+            if sp:
+                sp.count = D.read_int(img[int(sy0 - 0.017 * h): int(sy0 + 0.034 * h), sp.x - hw: sp.x + hw], dh)
+        counts = {}
+        pitch = self.cfg.spool_pitch * h
+        for (c, r), col in cells.items():
+            front = min(rr for (cc, rr) in cells if cc == c) == r
+            if front or col == "generator":
+                y, half_h = int(rows[r]), int(0.27 * pitch)
+                n = D.read_int(img[max(0, y - half_h): y + half_h, int(xs[c]) - hw: int(xs[c]) + hw], dh)
+                if n is not None:
+                    counts[(c, r)] = n
+        for g in grid:
+            g.count = counts.get((g.column, g.row))
         return State(
             width=img.shape[1],
             height=img.shape[0],
@@ -360,6 +384,8 @@ class Analyzer:
             row_y=rows,
             links=self.links(img, xs, rows, cells),
             slot_links=self.slot_links(img, slots),
+            belt_free=belt_free,
+            counts=counts,
         )
 
 

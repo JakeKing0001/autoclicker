@@ -46,7 +46,7 @@ public class BotService extends AccessibilityService {
     private volatile boolean running;
     private Strategy strategy;
     private String gamePackage;
-    private long tapDelay = 350, digDelay = 200, idleDelay = 400;
+    private long afterBurst = 500, tapGap = 120, idleDelay = 400;
     private boolean dryRun;
     private int frame, taps;
 
@@ -180,8 +180,7 @@ public class BotService extends AccessibilityService {
         SharedPreferences p = getSharedPreferences(MainActivity.PREFS, MODE_PRIVATE);
         strategy = new Strategy();
         strategy.maxOnBelt = p.getInt("max_belt", 5);
-        tapDelay = p.getInt("tap_delay_ms", 350);
-        digDelay = Math.min(tapDelay, 200);
+        afterBurst = p.getInt("after_burst_ms", 500);
         dryRun = p.getBoolean("dry_run", false);
         gamePackage = currentPackage();
         frame = 0;
@@ -259,20 +258,26 @@ public class BotService extends AccessibilityService {
         frame++;
         String text = frame + ": " + d.reason
                 + "\nesposti: " + fmt(st.exposed)
-                + "\nnastro: " + fmt(st.belt) + " · slot liberi " + st.freeSlots() + " · tocchi " + taps;
+                + "\nposti sul nastro " + (st.beltFree >= 0 ? st.beltFree : "?") + " · slot liberi "
+                + st.freeSlots() + " · tocchi " + taps;
         main.post(() -> {
             status.setText(text);
             if (!running) return;
-            if (d.spool != null) {
-                if (!dryRun) {
-                    tap(d.spool.x, d.spool.y);
-                    strategy.remember(d.spool);
-                    taps++;
-                }
-                main.postDelayed(loop, d.fast ? digDelay : tapDelay);
-            } else {
+            if (d.moves.isEmpty()) {
                 main.postDelayed(loop, idleDelay);
+                return;
             }
+            // raffica: tutti i tocchi uno dopo l'altro, poi un nuovo screenshot
+            for (int i = 0; i < d.moves.size(); i++) {
+                Strategy.Move m = d.moves.get(i);
+                main.postDelayed(() -> {
+                    if (!running || dryRun) return;
+                    tap(m.spool.x, m.spool.y);
+                    strategy.remember(m);
+                    taps++;
+                }, i * tapGap);
+            }
+            main.postDelayed(loop, d.moves.size() * tapGap + afterBurst);
         });
     }
 
