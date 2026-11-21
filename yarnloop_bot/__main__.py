@@ -47,6 +47,7 @@ def cmd_run(args):
         os.makedirs(args.save_debug, exist_ok=True)
     taps, idle, frame = 0, 0, 0
     last_screen, last_screen_tap = None, 0.0
+    level_streak = 0
     print("Avviato. Ctrl+C per fermare.")
     try:
         while args.max_taps is None or taps < args.max_taps:
@@ -54,6 +55,11 @@ def cmd_run(args):
             st = an.analyze(np.asarray(img))
             dec = strat.decide(st)
             frame += 1
+            # il livello deve essere visibile in due screenshot di fila, e non subito dopo un pulsante
+            # (dopo Riprova si vede per un attimo la tavola vecchia, poi parte la pubblicita')
+            level_streak = level_streak + 1 if st.belt_free is not None else 0
+            if dec.moves and (level_streak < 2 or time.monotonic() - last_screen_tap < cfg.settle_time):
+                dec.moves, dec.reason = [], "aspetto che il livello sia pronto"
             print(
                 f"[{frame}] esposti: {_fmt(st.exposed)} | nastro: {_fmt(st.belt)} | "
                 f"slot liberi {st.free_slots} -> {dec.reason}"

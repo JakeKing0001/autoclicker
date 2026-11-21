@@ -225,6 +225,8 @@ class Strategy:
 
         moves, used_cols, used_slots = [], set(), set()
         picked_value = 0
+        # rocchetti "parcheggiati": fermi negli slot con un colore che ora non e' esposto
+        parked = sum(1 for sp in st.slots if sp and st.exposed[sp.color] <= 0)
         while seats > 0:
             best = None
             for m, kind, counts in cands:
@@ -242,12 +244,27 @@ class Strategy:
                 finishes = all(n <= avail[c] for c, n in zip(m.colors, counts) if c)
                 cell = (m.spool.column, m.spool.row)
                 dig = kind == "grid" and cell in dig_cols
-                if not dig and (gain <= 0 or (gain < cfg.min_gain and not finishes)):
+                # sblocco: il distributore va svuotato (sforna i rocchetti che servono, es. il bianco 50)
+                # e i "?" vanno scoperti, anche se il rocchetto davanti ora non serve
+                below = st.cells.get((cell[0], cell[1] + 1))
+                explore = kind == "grid" and (m.refills or below == "mystery")
+                small = gain <= 0 or (gain < cfg.min_gain and not finishes)
+                if small and not dig and not explore:
                     continue  # occuperebbe un posto sul nastro per niente
                 # chi non finisce tornera' in uno slot: serve spazio (gli slot liberano il loro posto)
                 new_returns = 0 if finishes else len(m.colors)
                 frees = len(m.colors) if kind == "slot" else 0
-                if kind == "grid" and new_returns > 0 and new_returns > room:
+                limit = room + (cfg.reserve_slots if explore and small else 0)
+                if kind == "grid" and new_returns > 0 and new_returns > limit:
+                    continue
+                # finirebbe parcheggiato (colore non esposto): al massimo `max_parked` slot cosi',
+                # tranne per svuotare il distributore
+                parks = kind == "grid" and not finishes and all(not c or st.exposed[c] <= 0 for c in m.colors)
+                if parks and not m.refills and parked >= cfg.max_parked:
+                    continue
+                # colore che nel disegno non c'e' piu': resterebbe per sempre in uno slot
+                if kind == "grid" and not finishes and not m.refills and \
+                        any(c and st.remaining[c] == 0 for c in m.colors):
                     continue
                 score = gain
                 if finishes:
@@ -258,11 +275,15 @@ class Strategy:
                     score += 4
                 if dig:
                     score += max(1, 6 - 2 * dig_cols[cell])
+                if explore and small:
+                    score += 1  # il distributore ha gia' +4
                 if best is None or score > best[0]:
                     best = (score, m, kind, counts, cols, new_returns, frees, gain)
             if best is None:
                 break
             score, m, kind, counts, cols, new_returns, frees, gain = best
+            if kind == "grid" and new_returns and all(not c or st.exposed[c] <= 0 for c in m.colors):
+                parked += 1
             moves.append(m)
             m.returns = new_returns
             seats -= m.seats
@@ -279,19 +300,6 @@ class Strategy:
             picked_value += gain
 
         on_belt = (st.belt_cap or cfg.max_on_belt) - st.belt_free
-        if not moves and on_belt == 0 and room >= 1:
-            # nastro vuoto e niente di utile: distributore o colore con piu' lana nel disegno
-            best = None
-            for m, kind, counts in cands:
-                if kind != "grid":
-                    continue
-                score = (m.refills, sum(st.remaining[c] for c in m.colors if c))
-                if best is None or score > best[0]:
-                    best = (score, m)
-            if best and (best[0][0] or best[0][1] > 0):
-                best[1].returns = len(best[1].colors)
-                moves.append(best[1])
-
         if not moves:
             return Decision([], "aspetto che il nastro lavori" if on_belt else "nessuna mossa sicura")
         desc = ", ".join(f"{'+'.join(c for c in m.colors if c)}{'' if m.spool.count is None else ' ' + str(m.spool.count)}"

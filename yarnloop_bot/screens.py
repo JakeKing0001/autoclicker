@@ -36,6 +36,21 @@ HOME_BUTTON = _r(350, 1900, 730, 2000)
 HOME_NAV = _r(0, 2230, 1080, 2330)
 
 
+def _is_x(white: np.ndarray, mx: int, my: int, bw: int) -> bool:
+    """Una X: bianco lungo le due diagonali, niente bianco sugli assi (a differenza di %, scritte...)."""
+    H, W = white.shape
+
+    def at(x, y):
+        return 0 <= y < H and 0 <= x < W and bool(white[int(y), int(x)])
+
+    steps = [k / 10 for k in range(-2, 3)]  # da -0.2 a +0.2 del diametro
+    d1 = sum(at(mx + t * bw, my + t * bw) for t in steps) / len(steps)
+    d2 = sum(at(mx + t * bw, my - t * bw) for t in steps) / len(steps)
+    o = 0.22 * bw
+    axes = sum(at(mx + dx, my + dy) for dx, dy in ((o, 0), (-o, 0), (0, o), (0, -o))) / 4
+    return d1 >= 0.6 and d2 >= 0.6 and axes <= 0.25
+
+
 def classify(img: np.ndarray):
     """Restituisce (nome, (x, y) da toccare) oppure (None, None)."""
     h, w = img.shape[:2]
@@ -44,6 +59,10 @@ def classify(img: np.ndarray):
     offer = _frac(img, OFFER_BOX, ["orange", "yellow"], w, h)
     if green >= 0.5 and panel >= 0.6 and offer < 0.05:
         return "pulsante Riprova/Continua", (int(540 / 1080 * w), int(1380 / 2340 * h))
+
+    # Home prima di tutto (le sue icone rosse in alto a destra sono offerte, non X di chiusura)
+    if _frac(img, HOME_BUTTON, GREEN, w, h) >= 0.6 and _frac(img, HOME_NAV, ["blue", "lightblue", "purple"], w, h) >= 0.5:
+        return "Home: avvio il livello", (int(540 / 1080 * w), int(1950 / 2340 * h))
 
     # X rossa di chiusura in alto a destra: cerchio rosso con una X bianca in mezzo
     x0, y0, x1, y1 = (int(CLOSE_AREA[0] * w), int(CLOSE_AREA[1] * h), int(CLOSE_AREA[2] * w), int(CLOSE_AREA[3] * h))
@@ -55,10 +74,7 @@ def classify(img: np.ndarray):
         if not (0.05 * w <= bw <= 0.12 * w and 0.75 <= bw / bh <= 1.33):
             continue
         mx, my = (cx0 + cx1) // 2, (cy0 + cy1) // 2
-        q = bw // 4
-        if white[my - q: my + q, mx - q: mx + q].mean() > 0.2:
+        if _is_x(white, mx, my, bw):
             return "chiudo (X)", (x0 + mx, y0 + my)
 
-    if _frac(img, HOME_BUTTON, GREEN, w, h) >= 0.6 and _frac(img, HOME_NAV, ["blue", "lightblue", "purple"], w, h) >= 0.5:
-        return "Home: avvio il livello", (int(540 / 1080 * w), int(1950 / 2340 * h))
     return None, None

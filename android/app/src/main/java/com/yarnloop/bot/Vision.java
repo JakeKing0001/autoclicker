@@ -377,18 +377,24 @@ public final class Vision {
             int col = dominant(cx - half, R[1], cx + half, R[3], 0.25f, false);
             st.slots.add(col < 0 ? null : new Spool(col, cx, (R[1] + R[3]) / 2, true, st.slots.size()));
         }
-        // sbarretta tra due slot vicini = rocchetti collegati
-        int yb = R[1] + (R[3] - R[1]) / 2, need = Math.max(3, (int) (0.006 * h));
+        // sbarretta tra due slot vicini = rocchetti collegati. E' una striscia orizzontale spessa
+        // 20-70 px; il bordo rosso che lampeggia con gli slot quasi pieni e' lungo quanto lo slot
         for (int i = 0; i + 1 < st.slots.size(); i++) {
             Spool a = st.slots.get(i), b = st.slots.get(i + 1);
             if (a == null || b == null) continue;
-            int xm = (a.x + b.x) / 2, full = 0;
-            for (int y = R[1]; y < yb; y++) {
+            int xm = (a.x + b.x) / 2, run = 0;
+            boolean link = false;
+            for (int y = R[1]; y <= R[3]; y++) {
                 int f = 0;
-                for (int x = xm - 4; x < xm + 5; x++) if (!ignored(c(x, y))) f++;
-                if (f > 0.8 * 9) full++;
+                if (y < R[3]) for (int x = xm - 4; x < xm + 5; x++) if (!ignored(c(x, y))) f++;
+                if (y < R[3] && f > 0.8 * 9) {
+                    run++;
+                } else {
+                    if (run >= 0.008f * h && run <= 0.03f * h) link = true;
+                    run = 0;
+                }
             }
-            if (full >= need) {
+            if (link) {
                 st.slotLinks.put(i, i + 1);
                 st.slotLinks.put(i + 1, i);
             }

@@ -50,6 +50,7 @@ public class BotService extends AccessibilityService {
     private boolean dryRun, autoButtons = true;
     private String lastScreen;
     private long lastScreenTap;
+    private int levelStreak;
     private int frame, taps;
 
     private final Runnable loop = this::step;
@@ -257,8 +258,14 @@ public class BotService extends AccessibilityService {
         bmp.recycle();
 
         Vision.State st = new Vision(px, w, h).analyze();
-        Strategy.Decision d = strategy.decide(st);
+        Strategy.Decision d0 = strategy.decide(st);
         frame++;
+        // il livello deve vedersi in due screenshot di fila e non subito dopo un pulsante
+        // (dopo Riprova si vede per un attimo la tavola vecchia, poi parte la pubblicita')
+        levelStreak = st.beltFree >= 0 ? levelStreak + 1 : 0;
+        boolean settling = levelStreak < 2 || android.os.SystemClock.uptimeMillis() - lastScreenTap < 4000;
+        Strategy.Decision d = (!d0.moves.isEmpty() && settling)
+                ? new Strategy.Decision(new java.util.ArrayList<>(), "aspetto che il livello sia pronto") : d0;
         String text = frame + ": " + d.reason
                 + "\nesposti: " + fmt(st.exposed)
                 + "\nposti sul nastro " + (st.beltFree >= 0 ? st.beltFree : "?") + " · slot liberi "

@@ -40,7 +40,7 @@ public final class Strategy {
         public final List<Move> moves;
         public final String reason;
 
-        Decision(List<Move> moves, String reason) {
+        public Decision(List<Move> moves, String reason) {
             this.moves = moves;
             this.reason = reason;
         }
@@ -56,6 +56,7 @@ public final class Strategy {
     long arriveMs = 1500; // dopo il tocco, tempo per arrivare sul nastro
     float reach = 1.3f;   // mentre gira scopre altra lana: raggiungibile = esposta x 1.3
     int minGain = 3;      // non mandare chi prenderebbe meno di cosi' (se non finisce)
+    int maxParked = 2;    // slot al massimo occupati da rocchetti con colori non esposti
     int reserveSlots = 1;
 
     private static final class Tap {
@@ -269,6 +270,9 @@ public final class Strategy {
             }
 
         Set<Integer> usedCols = new HashSet<>(), usedSlots = new HashSet<>();
+        // rocchetti "parcheggiati": fermi negli slot con un colore che ora non e' esposto
+        int parked = 0;
+        for (Vision.Spool sp : st.slots) if (sp != null && st.exposed[sp.color] <= 0) parked++;
         while (seats > 0) {
             Cand best = null;
             int bestScore = Integer.MIN_VALUE, bestReturns = 0;
@@ -287,13 +291,26 @@ public final class Strategy {
                     gain += Math.min(cd.counts[i], avail[c]);
                     if (cd.counts[i] > avail[c]) finishes = false;
                 }
-                Integer dc = cd.slot ? null : digCost.get(enc(m.spool.index, rowOf(st, m)));
-                if (dc == null && (gain <= 0 || (gain < minGain && !finishes))) continue; // posto sprecato
+                int row = cd.slot ? -1 : rowOf(st, m);
+                Integer dc = cd.slot ? null : digCost.get(enc(m.spool.index, row));
+                // sblocco: svuotare il distributore (sforna i rocchetti che servono) e scoprire i "?"
+                boolean explore = !cd.slot && (m.refills || st.cell(m.spool.index, row + 1) == Vision.MYSTERY);
+                boolean small = gain <= 0 || (gain < minGain && !finishes);
+                if (small && dc == null && !explore) continue; // posto sprecato
                 int returns = finishes ? 0 : m.colors.length;
-                if (!cd.slot && returns > 0 && returns > room) continue;
+                int limit = room + (explore && small ? reserveSlots : 0);
+                if (!cd.slot && returns > 0 && returns > limit) continue;
+                boolean parks = !cd.slot && !finishes, gone = false;
+                for (int c : m.colors) {
+                    if (c >= 0 && st.exposed[c] > 0) parks = false;
+                    if (c >= 0 && st.remaining[c] == 0) gone = true;
+                }
+                if (parks && !m.refills && parked >= maxParked) continue;      // troppi slot fermi
+                if (!cd.slot && !finishes && !m.refills && gone) continue;      // colore sparito: per sempre in slot
                 int score = gain + (finishes ? 5 : 0) + (m.refills ? 4 : 0);
                 if (cd.slot) score += 3 * (st.slots.size() - st.freeSlots());
                 if (dc != null) score += Math.max(1, 6 - 2 * dc);
+                if (explore && small) score += 1;
                 if (score > bestScore) {
                     bestScore = score;
                     best = cd;
@@ -303,6 +320,11 @@ public final class Strategy {
             if (best == null) break;
             Move m = best.m;
             m.returns = bestReturns;
+            if (!best.slot && bestReturns > 0) {
+                boolean allHidden = true;
+                for (int c : m.colors) if (c >= 0 && st.exposed[c] > 0) allHidden = false;
+                if (allHidden) parked++;
+            }
             moves.add(m);
             seats -= m.seats;
             for (int col : best.cols) usedCols.add(col);
@@ -318,25 +340,6 @@ public final class Strategy {
         }
 
         int onBelt = (st.beltCap > 0 ? st.beltCap : maxOnBelt) - st.beltFree;
-        if (moves.isEmpty() && onBelt == 0 && room >= 1) {
-            // nastro vuoto e niente di utile: distributore o colore con piu' lana nel disegno
-            Move best = null;
-            long bestScore = 0;
-            for (Cand cd : cands) {
-                if (cd.slot) continue;
-                long score = cd.m.refills ? 1_000_000L : 0;
-                for (int c : cd.m.colors) if (c >= 0) score += st.remaining[c];
-                if (score > bestScore) {
-                    bestScore = score;
-                    best = cd.m;
-                }
-            }
-            if (best != null) {
-                best.returns = best.colors.length;
-                moves.add(best);
-            }
-        }
-
         if (moves.isEmpty())
             return new Decision(moves, onBelt > 0 ? "aspetto che il nastro lavori" : "nessuna mossa sicura");
         StringBuilder sb = new StringBuilder().append(moves.size()).append(" tocchi: ");

@@ -129,6 +129,22 @@ def test_finisher_allowed_with_full_slots():
     assert [(m.spool.color, m.spool.count) for m in dec.moves] == [("white", 30)], dec
 
 
+def test_generator_is_emptied():
+    """Video 3: col nastro mezzo vuoto il bot aspettava e il distributore restava a 8 per tutta la partita."""
+    img = os.path.join(os.path.dirname(__file__), "..", "examples", "livello35_bloccato.jpg")
+    st = Analyzer(Config()).analyze(np.asarray(Image.open(img).convert("RGB")))
+    assert st.cells[(2, 1)] == "generator" and st.counts[(2, 1)] == 8
+    st.belt_spools = [("brown", 4)]  # il marrone 4 finisce, quindi non torna
+    dec = Strategy(Config()).decide(st)
+    assert any(m.spool.column == 2 for m in dec.moves), dec
+
+
+def test_slot_glow_is_not_a_link():
+    """Il bordo rosso che lampeggia con gli slot quasi pieni non e' un'asta tra due rocchetti."""
+    st = _state33()
+    assert st.slot_links == {0: 1, 1: 0}
+
+
 def test_no_taps_outside_level():
     """Sotto i popup (Spazio finito, offerte) il contatore non si legge: nessun tocco sulla griglia."""
     for f in ("spazio_finito", "vuoi_procedere", "hai_perso", "home_offerta"):
@@ -141,7 +157,9 @@ def test_no_taps_outside_level():
 def test_screens():
     from yarnloop_bot.screens import classify
     want = {"hai_perso": (540, 1380), "acquisto_annullato": (540, 1380), "vuoi_procedere": "X",
-            "home_offerta": "X", "home": (540, 1950), "spazio_finito": None}
+            "home_offerta": "X", "home": (540, 1950), "spazio_finito": None,
+            "home_ads": (540, 1950),  # il cerchio rosso col "%" in Home e' un'offerta, non una X
+            "home_bonanza": "X", "dopo_riprova": None}
     for f, exp in want.items():
         img = os.path.join(os.path.dirname(__file__), "..", "examples", "screens", f + ".jpg")
         kind, pt = classify(np.asarray(Image.open(img).convert("RGB")))

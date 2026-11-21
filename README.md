@@ -22,7 +22,11 @@ Regole speciali che conosce:
 - **Distributori** (blocchi grigio-blu col numero): la loro colonna ha la precedenza; quello che c'è
   dietro non si può raggiungere finché il distributore non si svuota.
 - **Lana bianca**: riconosciuta sia nel disegno sia nei rocchetti.
-- **Rocchetti misteriosi "?"**: colore sconosciuto, il bot non scava per raggiungerli.
+- **Rocchetti misteriosi "?"**: colore sconosciuto; se restano posti liberi il bot toglie il rocchetto
+  che li copre, per scoprirli.
+- **Sblocco**: quando restano posti liberi e niente di utile, svuota il distributore (sforna i
+  rocchetti che servono) anche se il rocchetto davanti non serve subito. Al massimo 2 slot restano
+  occupati da rocchetti con colori non esposti.
 - Ogni posto libero sul nastro va al rocchetto che **raccoglie più lana** (numero e lana esposta);
   chi non può finire torna negli slot, quindi ne manda solo finché negli slot c'è posto.
   Non manda rocchetti che prenderebbero quasi niente (intasano il nastro: è così che si perde).

@@ -53,6 +53,7 @@ class Config:
     idle_delay: float = 0.6       # attesa quando non c'e' niente da fare
     arrive_time: float = 1.5      # dopo il tocco, quanto ci mette un rocchetto ad arrivare sul nastro
     reach: float = 1.3            # mentre gira scopre altra lana: la lana raggiungibile e' circa esposta x 1.3
+    max_parked: int = 2           # slot al massimo occupati da rocchetti con colori non esposti
     min_gain: int = 3             # non mandare rocchetti che prenderebbero meno di cosi' (se non finiscono)
     recent_window: float = 2.5    # per quanti secondi un rocchetto appena toccato conta come "sul nastro"
     reserve_slots: int = 1        # slot da lasciare sempre liberi quando si scava
@@ -62,6 +63,7 @@ class Config:
     # (mai offerte a pagamento). La schermata deve essere uguale in due screenshot di fila.
     auto_buttons: bool = True
     screen_tap_every: float = 2.5  # secondi minimi tra due tocchi su queste schermate
+    settle_time: float = 4.0       # dopo uno di questi tocchi, attesa prima di toccare i rocchetti
 
     @classmethod
     def load(cls, path: str | None) -> "Config":

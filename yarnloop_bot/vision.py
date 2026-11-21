@@ -171,11 +171,14 @@ class Analyzer:
             if not a or not b:
                 continue
             xm = (a.x + b.x) // 2
-            band = img[y0: y0 + (y1 - y0) // 2, xm - 4: xm + 5]
+            band = img[y0:y1, xm - 4: xm + 5]
             cls = C.classify(band)
             colored = ~np.isin(cls, [C.index(n) for n in C.IGNORED])
-            # la sbarretta e' una striscia orizzontale: basta che alcune righe siano piene
-            if (colored.mean(axis=1) > 0.8).sum() >= max(3, int(0.006 * h)):
+            # la sbarretta e' una striscia orizzontale spessa 20-70 px; il bordo rosso che lampeggia
+            # quando gli slot sono quasi pieni e' invece una riga verticale lunga quanto lo slot
+            full = colored.mean(axis=1) > 0.8
+            runs = _runs(full, 1)
+            if any(0.008 * h <= (e - s0) <= 0.03 * h for s0, e in runs):
                 links[i], links[i + 1] = i + 1, i
         return links
 

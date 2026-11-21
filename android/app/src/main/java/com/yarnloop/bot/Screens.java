@@ -55,12 +55,38 @@ final class Screens {
         return mn >= 200 && mx - mn < 45;
     }
 
+    /** Una X: bianco lungo le due diagonali e niente bianco sugli assi (a differenza di "%" o scritte). */
+    private static boolean isX(int[] px, int w, int h, int mx, int my, int bw) {
+        int d1 = 0, d2 = 0, ax = 0;
+        for (int k = -2; k <= 2; k++) {
+            float t = k / 10f;
+            if (whiteAt(px, w, h, mx + t * bw, my + t * bw)) d1++;
+            if (whiteAt(px, w, h, mx + t * bw, my - t * bw)) d2++;
+        }
+        float o = 0.22f * bw;
+        if (whiteAt(px, w, h, mx + o, my)) ax++;
+        if (whiteAt(px, w, h, mx - o, my)) ax++;
+        if (whiteAt(px, w, h, mx, my + o)) ax++;
+        if (whiteAt(px, w, h, mx, my - o)) ax++;
+        return d1 / 5f >= 0.6f && d2 / 5f >= 0.6f && ax / 4f <= 0.25f;
+    }
+
+    private static boolean whiteAt(int[] px, int w, int h, float x, float y) {
+        int xi = (int) x, yi = (int) y;
+        return xi >= 0 && yi >= 0 && xi < w && yi < h && white(px[yi * w + xi]);
+    }
+
     static Result classify(int[] px, int w, int h) {
         float green = frac(px, w, h, RESULT_BUTTON, Vision.GREEN, Vision.LIME);
         float panel = frac(px, w, h, RESULT_PANEL, Vision.CREAM, Vision.WHITE);
         float offer = frac(px, w, h, OFFER_BOX, Vision.ORANGE, Vision.YELLOW);
         if (green >= 0.5f && panel >= 0.6f && offer < 0.05f)
             return new Result("pulsante Riprova/Continua", (int) (540f / 1080 * w), (int) (1380f / 2340 * h));
+
+        // Home prima di tutto: le sue icone rosse in alto a destra (es. "%") sono offerte, non X
+        if (frac(px, w, h, HOME_BUTTON, Vision.GREEN, Vision.LIME) >= 0.6f
+                && frac(px, w, h, HOME_NAV, Vision.BLUE, Vision.LIGHTBLUE, Vision.PURPLE) >= 0.5f)
+            return new Result("Home: avvio il livello", (int) (540f / 1080 * w), (int) (1950f / 2340 * h));
 
         // X rossa: cerchio rosso compatto con una X bianca in mezzo
         int x0 = (int) (CLOSE_AREA[0] * w), y0 = (int) (CLOSE_AREA[1] * h);
@@ -89,18 +115,10 @@ final class Screens {
             if (qt < minPx) continue;
             int bw = bx1 - bx0 + 1, bh = by1 - by0 + 1;
             if (bw < 0.05f * w || bw > 0.12f * w || bw / (float) bh < 0.75f || bw / (float) bh > 1.33f) continue;
-            int mx = (bx0 + bx1 + 1) / 2, my = (by0 + by1 + 1) / 2, qq = bw / 4, n = 0, f = 0;
-            for (int y = my - qq; y < my + qq; y++)
-                for (int x = mx - qq; x < mx + qq; x++) {
-                    n++;
-                    if (white(px[(y0 + y) * w + x0 + x])) f++;
-                }
-            if (n > 0 && f > 0.2f * n) return new Result("chiudo (X)", x0 + mx, y0 + my);
+            int mx = (bx0 + bx1 + 1) / 2, my = (by0 + by1 + 1) / 2;
+            if (isX(px, w, h, x0 + mx, y0 + my, bw)) return new Result("chiudo (X)", x0 + mx, y0 + my);
         }
 
-        if (frac(px, w, h, HOME_BUTTON, Vision.GREEN, Vision.LIME) >= 0.6f
-                && frac(px, w, h, HOME_NAV, Vision.BLUE, Vision.LIGHTBLUE, Vision.PURPLE) >= 0.5f)
-            return new Result("Home: avvio il livello", (int) (540f / 1080 * w), (int) (1950f / 2340 * h));
         return null;
     }
 }
