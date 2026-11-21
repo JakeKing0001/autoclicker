@@ -23,7 +23,7 @@ public class MainActivity extends Activity {
 
     private TextView serviceState;
     private EditText tapDelay, maxBelt;
-    private CheckBox dryRun;
+    private CheckBox dryRun, autoButtons;
 
     private int dp(float v) {
         return (int) (v * getResources().getDisplayMetrics().density + 0.5f);
@@ -97,9 +97,14 @@ public class MainActivity extends Activity {
         dryRun.setText("Solo prova: mostra le mosse senza toccare");
         dryRun.setChecked(p.getBoolean("dry_run", false));
         col.addView(dryRun);
+        autoButtons = new CheckBox(this);
+        autoButtons.setText("Tocca da solo Riprova / Continua / X / Livello (mai le offerte a pagamento)");
+        autoButtons.setChecked(p.getBoolean("auto_buttons", true));
+        col.addView(autoButtons);
         text(col, "Le impostazioni valgono dal prossimo ▶.", 12).setTextColor(Color.GRAY);
 
-        text(col, "Il bot tocca solo i rocchetti (slot e griglia), mai i bonus a pagamento. "
+        text(col, "Il bot tocca i rocchetti solo quando vede il contatore del nastro (N/5): sotto i popup, "
+                + "le pubblicità e le offerte non tocca la griglia. Non tocca mai i bonus o le offerte a pagamento. "
                 + "Si mette in pausa se esci dal gioco. Richiede Android 11 o superiore.", 12)
                 .setTextColor(Color.GRAY);
 
@@ -123,6 +128,7 @@ public class MainActivity extends Activity {
                 .putInt("after_burst_ms", parse(tapDelay, 500, 100, 10000))
                 .putInt("max_belt", parse(maxBelt, 5, 1, 20))
                 .putBoolean("dry_run", dryRun.isChecked())
+                .putBoolean("auto_buttons", autoButtons.isChecked())
                 .apply();
     }
 

@@ -33,6 +33,7 @@ class Move:
     colors: list
     refills: bool = False  # davanti a un distributore: al suo posto ne arriva un altro
     seats: int = 1         # posti sul nastro occupati (2 per i rocchetti collegati)
+    returns: int = 0       # quanti probabilmente torneranno negli slot (non finiscono)
 
 
 @dataclass
@@ -56,22 +57,23 @@ class _Tap:
 class Strategy:
     def __init__(self, cfg: Config):
         self.cfg = cfg
-        self.sent: list[tuple[float, str, int]] = []  # (tempo, colore, lana) dei rocchetti partiti
+        self.sent: list[tuple] = []  # (tempo, colore, lana, torna negli slot 0/1) dei rocchetti partiti
         self.blocked: dict[tuple, float] = {}
         self.pending: list[_Tap] = []
 
     # ------------------------------------------------------------------ memoria
     def _recent(self) -> Counter:
         now = time.monotonic()
-        self.sent = [e for e in self.sent if now - e[0] < self.cfg.recent_window]
-        return Counter(c for _, c, _ in self.sent)
+        self.sent = [e for e in self.sent if now - e[0] < max(self.cfg.recent_window, self.cfg.loop_time)]
+        return Counter(e[1] for e in self.sent)
 
     def remember(self, move: Move) -> None:
         now = time.monotonic()
         self.pending.append(_Tap(move.key, move.colors, now, move.refills))
-        for c in move.colors:
+        for i, c in enumerate(move.colors):
             if c:
-                self.sent.append((now, c, move.spool.count or self.cfg.yarn_per_spool))
+                n = move.spool.count if move.spool.count is not None else self.cfg.yarn_per_spool
+                self.sent.append((now, c, n, 1 if i < move.returns else 0))
 
     @staticmethod
     def _key_slot(s: Spool):
@@ -148,130 +150,143 @@ class Strategy:
 
     # ------------------------------------------------------------------ decisione
     def decide(self, st: State) -> Decision:
+        """Riempie i posti liberi del nastro con i rocchetti che raccolgono piu' lana.
+
+        Valore di un rocchetto = lana che puo' davvero prendere = min(numero, lana esposta libera).
+        Un rocchetto che non riesce a finire torna negli slot: se ne mandano solo finche'
+        c'e' posto negli slot (contando anche quelli gia' in giro che torneranno).
+        """
         cfg = self.cfg
-        slot_moves = {}
-        for s in st.slots:
-            if s:
-                slot_moves[self._key_slot(s)] = s
+        slot_moves = {self._key_slot(s): s for s in st.slots if s}
         fronts = [cell for cell in st.cells if self._is_front(st, cell)]
         self._check_pending(set(slot_moves) | {self._key_grid(st, c) for c in fronts})
 
-        if not st.level_visible:
-            return Decision([], "nessun livello visibile")
-
-        recent = self._recent()
-        if st.belt_free is not None:
-            seats = st.belt_free
-        else:
-            on_belt = sum(max(st.belt[c], recent[c]) for c in set(st.belt) | set(recent))
-            seats = cfg.max_on_belt - on_belt
+        if st.belt_free is None:
+            # il contatore del nastro non si vede: popup, pubblicita', fine livello... non toccare niente
+            return Decision([], "non e' la schermata del livello")
+        seats = st.belt_free
         if seats <= 0:
             return Decision([], "nastro pieno")
 
-        # lana ancora "libera" per colore = esposta - quella che stanno gia' prendendo i rocchetti partiti
+        now = time.monotonic()
+        loop = [e for e in self.sent if now - e[0] < cfg.loop_time]
         taken = Counter()
-        for _, c, n in self.sent:
-            taken[c] += n
-        avail = Counter({c: st.exposed[c] - taken[c] for c in st.exposed})
+        returning = 0
+        for e in loop:
+            taken[e[1]] += e[2]
+            returning += e[3] if len(e) > 3 else 0
+        avail = Counter({c: max(0, st.exposed[c] - taken[c]) for c in st.exposed})
+        # slot che restano liberi anche se tornano tutti quelli che non finiranno
+        room = st.free_slots - returning - cfg.reserve_slots
 
-        moves: list[Move] = []
-        spare_slots = st.free_slots - cfg.reserve_slots  # rocchetti "inutili" che possono tornare negli slot
-        done_slots, done_cols = set(), set()
+        def n_of(sp):
+            return sp.count if sp.count is not None else cfg.yarn_per_spool
 
-        def add(m: Move) -> bool:
-            nonlocal seats
-            if m.seats > seats:
-                return False
-            moves.append(m)
-            seats -= m.seats
-            for c in m.colors:
-                if c:
-                    avail[c] -= m.spool.count or cfg.yarn_per_spool
-            return True
-
-        # 1) slot: rimetti in giro tutto quello che ha lana esposta, prima chi puo' finire
-        cands = []
+        # --- candidati
+        cands = []  # (move, kind)
         for key, s in slot_moves.items():
-            if not self._usable(key) or s.index in done_slots:
+            if not self._usable(key):
                 continue
             j = st.slot_links.get(s.index)
             partner = st.slots[j] if j is not None and st.slots[j] else None
+            if partner and partner.index < s.index:
+                continue  # la coppia si tocca una volta sola
             colors = [s.color] + ([partner.color] if partner else [])
-            if not any(st.exposed[c] > 0 for c in colors):
-                continue
-            n = s.count if s.count is not None else cfg.yarn_per_spool
-            finishes = n <= avail[s.color]
-            cands.append(((finishes, -n if finishes else st.exposed[s.color]), s, key, colors, partner))
-        for _, s, key, colors, partner in sorted(cands, key=lambda t: t[0], reverse=True):
-            if s.index in done_slots:
-                continue
-            if add(Move(s, key, colors, False, len(colors))):
-                done_slots.add(s.index)
-                if partner:
-                    done_slots.add(partner.index)
-
-        # 2) prima fila con un colore esposto (prima il distributore, poi chi serve di piu')
-        cands = []
+            counts = [n_of(s)] + ([n_of(partner)] if partner else [])
+            cands.append((Move(s, key, colors, False, len(colors)), "slot", counts))
         for cell in fronts:
-            group = self._group(st, cell)
-            if group is None or not self._usable(self._key_grid(st, cell)):
+            if self._group(st, cell) is None or not self._usable(self._key_grid(st, cell)):
                 continue
             m = self._grid_move(st, cell)
-            if not any(st.exposed[c] > 0 for c in m.colors):
-                continue
-            gain = sum(max(0, avail[c]) for c in m.colors)
-            cands.append(((m.refills, gain), cell, m, group))
-        for _, cell, m, group in sorted(cands, key=lambda t: t[0], reverse=True):
-            if any(c[0] in done_cols for c in group):
-                continue
-            if add(m):
-                done_cols.update(c[0] for c in group)
-
-        # 3) scavo: togli i rocchetti che coprono un colore utile (uno per colonna)
-        plans = []
+            counts = [st.counts.get(c, cfg.yarn_per_spool) for c in self._group(st, cell)]
+            cands.append((m, "grid", counts))
+        # mosse di scavo: rocchetto davanti a un colore utile
+        dig_cols = {}
         for cell, color in st.cells.items():
-            if color == GEN or st.exposed[color] <= 0 or self._group(st, cell) is not None:
+            if color in (GEN, "mystery") or st.exposed[color] <= 0 or self._group(st, cell) is not None:
                 continue
             parts = [cell] + ([st.links[cell]] if cell in st.links else [])
             cost = sum(self._depth(st, p) for p in parts)
             if cost >= INF:
                 continue
             for p in parts:
-                if self._depth(st, p) <= 0:
-                    continue
-                f = (p[0], self._front(st, p[0]))
-                if self._group(st, f) is not None and self._usable(self._key_grid(st, f)):
-                    plans.append((cost, -avail[color], f, color))
+                if self._depth(st, p) > 0:
+                    f = (p[0], self._front(st, p[0]))
+                    if self._group(st, f) is not None:
+                        dig_cols[f] = min(dig_cols.get(f, INF), cost)
                     break
-        for cost, _, f, color in sorted(plans):
-            if f[0] in done_cols or cost > spare_slots:
-                continue
-            m = self._grid_move(st, f)
-            # un rocchetto tolto per scavare, se il suo colore non serve, finira' negli slot
-            useless = not any(st.exposed[c] > 0 for c in m.colors)
-            if useless and spare_slots <= 0:
-                continue
-            if add(m):
-                done_cols.update(c[0] for c in self._group(st, f))
-                if useless:
-                    spare_slots -= 1
 
-        # 4) niente da fare e nastro vuoto: prova col distributore o col colore che c'e' di piu'
-        on_belt_now = sum(recent.values()) + sum(st.belt.values())
-        if not moves and on_belt_now == 0 and st.free_slots >= cfg.reserve_slots + 2:
+        moves, used_cols, used_slots = [], set(), set()
+        picked_value = 0
+        while seats > 0:
             best = None
-            for cell in fronts:
-                if self._group(st, cell) is None or not self._usable(self._key_grid(st, cell)):
+            for m, kind, counts in cands:
+                if m.seats > seats:
                     continue
-                m = self._grid_move(st, cell)
-                score = (m.refills, sum(st.remaining[c] for c in m.colors))
+                if kind == "slot" and m.spool.index in used_slots:
+                    continue
+                cols = set()
+                if kind == "grid":
+                    cols = {c[0] for c in ([(m.spool.column, m.spool.row)] + ([st.links[(m.spool.column, m.spool.row)]]
+                            if (m.spool.column, m.spool.row) in st.links else []))}
+                    if cols & used_cols:
+                        continue
+                gain = sum(min(n, avail[c]) for c, n in zip(m.colors, counts) if c)
+                finishes = all(n <= avail[c] for c, n in zip(m.colors, counts) if c)
+                cell = (m.spool.column, m.spool.row)
+                dig = kind == "grid" and cell in dig_cols
+                if gain <= 0 and not dig:
+                    continue
+                # chi non finisce tornera' in uno slot: serve spazio (gli slot liberano il loro posto)
+                new_returns = 0 if finishes else len(m.colors)
+                frees = len(m.colors) if kind == "slot" else 0
+                if kind == "grid" and new_returns > room:
+                    continue
+                score = gain
+                if finishes:
+                    score += 5
+                if kind == "slot":
+                    score += 3 * (len(st.slots) - st.free_slots)  # piu' gli slot sono pieni, piu' conviene svuotarli
+                if m.refills:
+                    score += 4
+                if dig:
+                    score += max(1, 6 - 2 * dig_cols[cell])
+                if best is None or score > best[0]:
+                    best = (score, m, kind, counts, cols, new_returns, frees, gain)
+            if best is None:
+                break
+            score, m, kind, counts, cols, new_returns, frees, gain = best
+            moves.append(m)
+            m.returns = new_returns
+            seats -= m.seats
+            used_cols |= cols
+            if kind == "slot":
+                used_slots.add(m.spool.index)
+                j = st.slot_links.get(m.spool.index)
+                if j is not None:
+                    used_slots.add(j)
+            room += frees - new_returns
+            for c, n in zip(m.colors, counts):
+                if c:
+                    avail[c] = max(0, avail[c] - n)
+            picked_value += gain
+
+        on_belt = (st.belt_cap or cfg.max_on_belt) - st.belt_free
+        if not moves and on_belt == 0 and room >= 1:
+            # nastro vuoto e niente di utile: distributore o colore con piu' lana nel disegno
+            best = None
+            for m, kind, counts in cands:
+                if kind != "grid":
+                    continue
+                score = (m.refills, sum(st.remaining[c] for c in m.colors if c))
                 if best is None or score > best[0]:
                     best = (score, m)
             if best and (best[0][0] or best[0][1] > 0):
-                add(best[1])
+                best[1].returns = len(best[1].colors)
+                moves.append(best[1])
 
         if not moves:
-            return Decision([], "aspetto che il nastro lavori" if on_belt_now else "nessuna mossa sicura")
-        desc = ", ".join(f"{'+'.join(m.colors)}{'' if m.spool.count is None else ' ' + str(m.spool.count)}"
+            return Decision([], "aspetto che il nastro lavori" if on_belt else "nessuna mossa sicura")
+        desc = ", ".join(f"{'+'.join(c for c in m.colors if c)}{'' if m.spool.count is None else ' ' + str(m.spool.count)}"
                          f"{' (slot)' if m.spool.where == 'slot' else ''}" for m in moves)
         return Decision(moves, f"{len(moves)} tocchi: {desc}")

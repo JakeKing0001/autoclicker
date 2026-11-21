@@ -18,6 +18,7 @@ import numpy as np
 from PIL import Image
 
 from .config import Config
+from . import screens
 from .debug import draw
 from .strategy import Strategy
 from .vision import Analyzer
@@ -45,6 +46,7 @@ def cmd_run(args):
     if args.save_debug:
         os.makedirs(args.save_debug, exist_ok=True)
     taps, idle, frame = 0, 0, 0
+    last_screen, last_screen_tap = None, 0.0
     print("Avviato. Ctrl+C per fermare.")
     try:
         while args.max_taps is None or taps < args.max_taps:
@@ -70,14 +72,16 @@ def cmd_run(args):
                 time.sleep(cfg.after_burst)
                 continue
 
-            if not st.level_visible:
-                idle += 1
-                if cfg.idle_tap and idle >= cfg.idle_tap_after:
-                    x, y = int(cfg.idle_tap[0] * st.width), int(cfg.idle_tap[1] * st.height)
-                    print(f"   nessun livello da {idle} cicli: tocco ({x},{y})")
+            if st.belt_free is None and cfg.auto_buttons:
+                # fuori dal livello: Riprova / Continua / X / Livello N, solo se la schermata e' stabile
+                kind, pt = screens.classify(np.asarray(img))
+                if kind and kind == last_screen and time.monotonic() - last_screen_tap > cfg.screen_tap_every:
+                    print(f"   {kind}: tocco {pt}")
                     if not args.dry_run:
-                        dev.tap(x, y)
-                    idle = 0
+                        dev.tap(*pt)
+                    last_screen_tap = time.monotonic()
+                    kind = None
+                last_screen = kind
             time.sleep(cfg.idle_delay)
     except KeyboardInterrupt:
         pass
@@ -96,6 +100,9 @@ def cmd_analyze(args):
     for s in st.grid:
         print(f"Colonna {s.column}: davanti {s.color} {s.count if s.count is not None else ''}, dietro {s.behind or '-'}  (tocco a {s.x},{s.y})")
     print("Posti liberi sul nastro:", st.belt_free)
+    if st.belt_free is None:
+        kind, pt = screens.classify(np.asarray(img))
+        print("Schermata:", kind or "sconosciuta (non tocco niente)", pt or "")
     print("Mosse scelte:", dec.reason)
     for m in dec.moves:
         print(f"   tocco ({m.spool.x},{m.spool.y}) {'+'.join(m.colors)}")

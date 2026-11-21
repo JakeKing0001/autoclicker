@@ -22,6 +22,8 @@ SAMPLES = [
     ("livello33", 365, 1516, "0"), ("livello33", 342, 1731, "4"), ("livello33", 385, 1731, "0"),
     ("livello33", 514, 1730, "1"), ("livello33", 554, 1730, "0"), ("livello33", 364, 1909, "3"),
     ("livello33", 93, 894, "1"), ("livello33", 122, 894, "9"),
+    ("livello35_meta", 978, 1025, "6"), ("livello35_bianco20", 966, 975, "8"),
+    ("livello35_bianco20", 516, 1730, "2"),  # "2" su un tappo bianco (esce spezzato)
 ]
 
 

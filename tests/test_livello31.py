@@ -100,11 +100,50 @@ def test_33_burst():
     st = _state33()
     dec = Strategy(Config()).decide(st)
     keys = [(m.spool.where, m.spool.x) for m in dec.moves]
-    # 4 posti: rosso+bianco collegati negli slot (2 posti), il bianco del distributore,
-    # l'arancio libero; l'arancio collegato a un rocchetto nascosto no
-    assert sum(m.seats for m in dec.moves) == 4, dec
-    assert dec.moves[0].spool.where == "slot" and dec.moves[0].seats == 2
-    assert ("grid", 365) in keys and ("grid", 540) in keys and ("grid", 714) not in keys
+    # rosso+bianco negli slot: il bianco e' gia' pieno (0) e il rosso non e' esposto -> inutile
+    assert all(m.spool.where == "grid" for m in dec.moves), dec
+    # il bianco 40 davanti al distributore e l'arancio libero; l'arancio collegato a uno nascosto no
+    assert keys[0] == ("grid", 365) and ("grid", 540) in keys and ("grid", 714) not in keys
+
+
+IMG35 = os.path.join(os.path.dirname(__file__), "..", "examples", "livello35_bianco50.jpg")
+
+
+def test_35_white_first():
+    """Nel video il bianco 50 restava fermo mentre il bot rimandava in giro rocchetti quasi inutili."""
+    st = Analyzer(Config()).analyze(np.asarray(Image.open(IMG35).convert("RGB")))
+    assert st.cells[(2, 0)] == "white" and st.counts[(2, 0)] == 50
+    assert st.cells[(1, 1)] == "mystery"
+    st.belt_free = 1
+    dec = Strategy(Config()).decide(st)
+    assert [(m.spool.color, m.spool.count) for m in dec.moves] == [("white", 50)], dec
+
+
+def test_no_taps_outside_level():
+    """Sotto i popup (Spazio finito, offerte) il contatore non si legge: nessun tocco sulla griglia."""
+    for f in ("spazio_finito", "vuoi_procedere", "hai_perso", "home_offerta"):
+        img = os.path.join(os.path.dirname(__file__), "..", "examples", "screens", f + ".jpg")
+        st = Analyzer(Config()).analyze(np.asarray(Image.open(img).convert("RGB")))
+        assert st.belt_free is None, f
+        assert Strategy(Config()).decide(st).moves == [], f
+
+
+def test_screens():
+    from yarnloop_bot.screens import classify
+    want = {"hai_perso": (540, 1380), "acquisto_annullato": (540, 1380), "vuoi_procedere": "X",
+            "home_offerta": "X", "home": (540, 1950), "spazio_finito": None}
+    for f, exp in want.items():
+        img = os.path.join(os.path.dirname(__file__), "..", "examples", "screens", f + ".jpg")
+        kind, pt = classify(np.asarray(Image.open(img).convert("RGB")))
+        if exp is None:
+            assert kind is None, f
+        elif exp == "X":
+            assert kind.startswith("chiudo") and pt[0] > 950 and 450 < pt[1] < 560, (f, pt)
+        else:
+            assert pt == exp, (f, pt)
+    for f in ("livello31", "livello33", "livello35_inizio", "livello35_bianco50", "livello35_fine"):
+        img = os.path.join(os.path.dirname(__file__), "..", "examples", f + ".jpg")
+        assert classify(np.asarray(Image.open(img).convert("RGB")))[0] is None, f
 
 
 if __name__ == "__main__":

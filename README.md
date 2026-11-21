@@ -22,6 +22,9 @@ Regole speciali che conosce:
 - **Distributori** (blocchi grigio-blu col numero): la loro colonna ha la precedenza; quello che c'è
   dietro non si può raggiungere finché il distributore non si svuota.
 - **Lana bianca**: riconosciuta sia nel disegno sia nei rocchetti.
+- **Rocchetti misteriosi "?"**: colore sconosciuto, il bot non scava per raggiungerli.
+- Ogni posto libero sul nastro va al rocchetto che **raccoglie più lana** (numero e lana esposta);
+  chi non può finire torna negli slot, quindi ne manda solo finché negli slot c'è posto.
 - Se un rocchetto toccato **non parte**, il bot lo lascia stare per qualche secondo e prova altro.
 - **Numeri**: legge il contatore dei posti liberi sul nastro, la lana che manca a ogni rocchetto
   (slot e prima fila) e quanti rocchetti restano nei distributori. Negli slot rimette in giro per primi
@@ -99,8 +102,9 @@ Altre impostazioni in `config.json`:
 
 - `tap_delay` – pausa dopo ogni tocco (alzala se il bot è troppo veloce);
 - `max_on_belt` – quanti rocchetti al massimo sul nastro;
-- `idle_tap` – es. `[0.5, 0.78]`: punto da toccare quando non si vede nessun livello
-  (per premere "Continua" a fine livello). Disattivato di default, controlla prima dove sta il pulsante.
+- `auto_buttons` – fuori dal livello tocca da solo **Riprova**, **Continua** (pannelli senza offerte),
+  la **X rossa** dei popup e il pulsante **Livello N** della Home. Mai offerte a pagamento,
+  "Continua a giocare" con le monete o pubblicità. La schermata deve essere uguale in due screenshot di fila.
 
 ## Solo telefono (Termux, senza PC)
 
@@ -117,7 +121,10 @@ Altre impostazioni in `config.json`:
   blu, viola, …). Livelli con due tonalità molto simili possono confonderlo.
 - I rocchetti **neri sul nastro** non si vedono bene (il nastro è scuro): il bot si ricorda però quelli
   che ha appena lanciato.
-- Pubblicità e schermate di fine livello vanno gestite a mano (o con `idle_tap`).
+- Le **pubblicità** vanno chiuse a mano. La schermata di **livello vinto** non l'ho ancora vista:
+  se il bot non la riconosce, aspetta senza toccare.
+- Sicurezza: i rocchetti si toccano solo quando si legge il contatore del nastro "N/5";
+  sotto popup, offerte e pubblicità il contatore non si vede e il bot non tocca la griglia.
 
 ## Test
 

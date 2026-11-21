@@ -51,13 +51,15 @@ class Config:
     tap_gap: float = 0.12         # pausa tra due tocchi della stessa raffica (secondi)
     after_burst: float = 0.5      # pausa dopo una raffica, prima del prossimo screenshot
     idle_delay: float = 0.6       # attesa quando non c'e' niente da fare
+    loop_time: float = 8.0        # quanto tempo un rocchetto resta in giro sul nastro (circa un giro)
     recent_window: float = 2.5    # per quanti secondi un rocchetto appena toccato conta come "sul nastro"
     reserve_slots: int = 1        # slot da lasciare sempre liberi quando si scava
     tap_check: float = 0.45       # dopo quanto controllare se il rocchetto toccato e' partito
     block_time: float = 6.0       # per quanto evitare un rocchetto che non e' partito
-    # Tocco da fare quando non si vede nessun livello (es. pulsante "Continua"). null = disattivato
-    idle_tap: list | None = None
-    idle_tap_after: int = 6       # cicli vuoti prima di usare idle_tap
+    # Fuori dal livello tocca da solo Riprova / Continua / X di chiusura / "Livello N"
+    # (mai offerte a pagamento). La schermata deve essere uguale in due screenshot di fila.
+    auto_buttons: bool = True
+    screen_tap_every: float = 2.5  # secondi minimi tra due tocchi su queste schermate
 
     @classmethod
     def load(cls, path: str | None) -> "Config":

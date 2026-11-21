@@ -47,7 +47,9 @@ public class BotService extends AccessibilityService {
     private Strategy strategy;
     private String gamePackage;
     private long afterBurst = 500, tapGap = 120, idleDelay = 400;
-    private boolean dryRun;
+    private boolean dryRun, autoButtons = true;
+    private String lastScreen;
+    private long lastScreenTap;
     private int frame, taps;
 
     private final Runnable loop = this::step;
@@ -182,6 +184,7 @@ public class BotService extends AccessibilityService {
         strategy.maxOnBelt = p.getInt("max_belt", 5);
         afterBurst = p.getInt("after_burst_ms", 500);
         dryRun = p.getBoolean("dry_run", false);
+        autoButtons = p.getBoolean("auto_buttons", true);
         gamePackage = currentPackage();
         frame = 0;
         taps = 0;
@@ -260,10 +263,20 @@ public class BotService extends AccessibilityService {
                 + "\nesposti: " + fmt(st.exposed)
                 + "\nposti sul nastro " + (st.beltFree >= 0 ? st.beltFree : "?") + " · slot liberi "
                 + st.freeSlots() + " · tocchi " + taps;
+        // fuori dal livello: Riprova / Continua / X / "Livello N", solo se la schermata e' stabile
+        Screens.Result scr = (st.beltFree < 0 && autoButtons) ? Screens.classify(px, w, h) : null;
         main.post(() -> {
-            status.setText(text);
+            status.setText(scr != null ? frame + ": " + scr.name : text);
             if (!running) return;
             if (d.moves.isEmpty()) {
+                long t = android.os.SystemClock.uptimeMillis();
+                if (scr != null && scr.name.equals(lastScreen) && t - lastScreenTap > 2500) {
+                    if (!dryRun) tap(scr.x, scr.y);
+                    lastScreenTap = t;
+                    lastScreen = null;
+                } else {
+                    lastScreen = scr != null ? scr.name : null;
+                }
                 main.postDelayed(loop, idleDelay);
                 return;
             }

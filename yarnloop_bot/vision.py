@@ -41,6 +41,7 @@ class State:
     links: dict = field(default_factory=dict)       # (col, riga) -> (col, riga) del compagno
     slot_links: dict = field(default_factory=dict)  # indice slot -> indice slot collegato
     belt_free: int | None = None                    # posti liberi sul nastro (contatore "N/5")
+    belt_cap: int | None = None                     # posti in tutto (il 5 di "N/5")
     counts: dict = field(default_factory=dict)      # (col, riga) -> numero letto (prima fila e distributori)
 
     def front_row(self, col):
@@ -207,6 +208,8 @@ class Analyzer:
                 return None
             x = int(x)
             name, _ = C.dominant(img[ya:yb, max(0, x - half): x + half], min_fraction=0.3)
+            if name == "black" and self._is_mystery(img, x, y, half, pitch_y, gy0, gy1):
+                return "mystery"
             return name
 
         best = None
@@ -273,6 +276,16 @@ class Analyzer:
             used += pts
         return links
 
+    @staticmethod
+    def _is_mystery(img, x, y, half, pitch_y, gy0, gy1):
+        """Rocchetto misterioso: nero con un "?" colorato sul tappo (i neri veri hanno numeri bianchi)."""
+        ya, yb = max(gy0, int(y - 0.2 * pitch_y)), min(gy1, int(y + 0.15 * pitch_y))
+        if yb - ya < 4:
+            return False
+        cl = C.classify(img[ya:yb, max(0, x - half): x + half])
+        colored = ~np.isin(cl, [C.index(n) for n in ("black", "bg", "cream", "white", "generator")])
+        return colored.mean() > 0.03
+
     def grid(self, img: np.ndarray, cls: np.ndarray = None):
         xs, rows, mat = self.grid_cells(img)
         self._last_grid = (xs, rows, mat)
@@ -289,7 +302,7 @@ class Analyzer:
                 if first is None:
                     first = i
                 stack.append(v)
-            if not stack or stack[0] == "generator":
+            if not stack or stack[0] in ("generator", "mystery"):
                 continue
             tap_y = int(rows[first] + 0.05 * self.cfg.spool_pitch * img.shape[0])
             result.append(Spool(stack[0], int(x), tap_y, "grid", ci, stack[1:], row=first))
@@ -353,7 +366,10 @@ class Analyzer:
         h, w = img.shape[:2]
         dh = self.cfg.digit_h * w
         cx0, cy0, cx1, cy1 = _px(self.cfg.counter, w, h)
-        belt_free = D.read_int(img[cy0:cy1, cx0:cx1], dh)
+        txt = D.read(img[cy0:cy1, cx0:cx1], dh)
+        parts = txt.split("/")
+        belt_free = int(parts[0]) if parts[0].isdigit() else None
+        belt_cap = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None
         sx0, sy0, sx1, sy1 = _px(self.cfg.slots, w, h)
         hw = int(self.cfg.spool_w * w / 2)
         for sp in slots:
@@ -366,7 +382,7 @@ class Analyzer:
             if front or col == "generator":
                 y, half_h = int(rows[r]), int(0.27 * pitch)
                 n = D.read_int(img[max(0, y - half_h): y + half_h, int(xs[c]) - hw: int(xs[c]) + hw], dh)
-                if n is not None:
+                if n is not None and (n > 0 or col == "generator"):  # un rocchetto in griglia non e' mai a 0
                     counts[(c, r)] = n
         for g in grid:
             g.count = counts.get((g.column, g.row))
@@ -385,6 +401,7 @@ class Analyzer:
             links=self.links(img, xs, rows, cells),
             slot_links=self.slot_links(img, slots),
             belt_free=belt_free,
+            belt_cap=belt_cap,
             counts=counts,
         )
 

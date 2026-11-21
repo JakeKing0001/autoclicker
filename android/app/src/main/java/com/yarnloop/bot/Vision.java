@@ -11,10 +11,11 @@ public final class Vision {
     // ------------------------------------------------------------------ colori
     public static final String[] NAMES = {
             "nero", "bianco", "sfondo", "crema", "distributore", "rosso", "rosa", "pelle", "arancio",
-            "marrone", "giallo", "lime", "verde", "ciano", "azzurro", "blu", "viola", "magenta"};
+            "marrone", "giallo", "lime", "verde", "ciano", "azzurro", "blu", "viola", "magenta", "misterioso"};
     public static final int BLACK = 0, WHITE = 1, BG = 2, CREAM = 3, GEN = 4, RED = 5, PINK = 6, SKIN = 7,
             ORANGE = 8, BROWN = 9, YELLOW = 10, LIME = 11, GREEN = 12, CYAN = 13, LIGHTBLUE = 14,
-            BLUE = 15, PURPLE = 16, MAGENTA = 17;
+            BLUE = 15, PURPLE = 16, MAGENTA = 17,
+            MYSTERY = 18; // rocchetto col "?" (colore sconosciuto): non e' un colore di pixel
     public static final int N = NAMES.length;
 
     static boolean ignored(int c) {
@@ -92,8 +93,9 @@ public final class Vision {
         public final Map<Integer, Integer> links = new HashMap<>();
         /** Numeri letti in prima fila e sui distributori: colonna*100+riga -> numero. */
         public final Map<Integer, Integer> counts = new HashMap<>();
-        /** Posti liberi sul nastro (contatore "N/5"), -1 = non letto. */
+        /** Posti liberi sul nastro (contatore "N/5"), -1 = non letto = non siamo nel livello. */
         public int beltFree = -1;
+        public int beltCap = -1;
 
         public int freeSlots() {
             int n = 0;
@@ -213,7 +215,10 @@ public final class Vision {
     private void numbers(State st) {
         float dh = DIGIT_H * w;
         int[] C = rect(COUNTER);
-        st.beltFree = Digits.readInt(px, w, h, C[0], C[1], C[2], C[3], dh);
+        String txt = Digits.read(px, w, h, C[0], C[1], C[2], C[3], dh);
+        String[] parts = txt.split("/", -1);
+        st.beltFree = parts[0].matches("\\d{1,2}") ? Integer.parseInt(parts[0]) : -1;
+        st.beltCap = parts.length > 1 && parts[1].matches("\\d{1,2}") ? Integer.parseInt(parts[1]) : -1;
         int[] S = rect(SLOTS);
         int hw = (int) (SPOOL_W * w / 2);
         for (Spool s : st.slots)
@@ -225,7 +230,7 @@ public final class Vision {
                 int v = st.cells[c][r];
                 if (v < 0 || (v != GEN && st.front(c) != r)) continue;
                 int n = Digits.readInt(px, w, h, st.colX[c] - hw, st.rowY[r] - halfH, st.colX[c] + hw, st.rowY[r] + halfH, dh);
-                if (n >= 0) st.counts.put(c * 100 + r, n);
+                if (n > 0 || (n == 0 && v == GEN)) st.counts.put(c * 100 + r, n); // in griglia mai 0
             }
     }
 
@@ -423,6 +428,7 @@ public final class Vision {
                     yb = Math.min(gy1, yb);
                     int x = xs.get(ci);
                     cells[ci][ri] = yb - ya < 4 ? -1 : dominant(x - half, ya, x + half, yb, 0.3f, false);
+                    if (cells[ci][ri] == BLACK && isMystery(x, y, half, pitchY, gy0, gy1)) cells[ci][ri] = MYSTERY;
                     if (ri < 2 && cells[ci][ri] >= 0) filled++;
                 }
             if (filled > bestFilled) {
@@ -446,6 +452,20 @@ public final class Vision {
             }
         }
         st.cells = bestCells;
+    }
+
+    /** Rocchetto misterioso: nero con un "?" colorato sul tappo (i neri veri hanno numeri bianchi). */
+    private boolean isMystery(int x, float y, int half, float pitchY, int gy0, int gy1) {
+        int ya = Math.max(gy0, (int) (y - 0.2f * pitchY)), yb = Math.min(gy1, (int) (y + 0.15f * pitchY));
+        if (yb - ya < 4) return false;
+        int n = 0, f = 0;
+        for (int yy = ya; yy < yb; yy++)
+            for (int xx = Math.max(0, x - half); xx < Math.min(w, x + half); xx++) {
+                n++;
+                int v = c(xx, yy);
+                if (v != BLACK && v != BG && v != CREAM && v != WHITE && v != GEN) f++;
+            }
+        return n > 0 && f > 0.03f * n;
     }
 
     /** Aste che collegano due rocchetti di colonne vicine (anche con uno nascosto sotto la barra). */
