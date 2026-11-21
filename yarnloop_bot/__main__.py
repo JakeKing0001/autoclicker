@@ -18,7 +18,7 @@ import numpy as np
 from PIL import Image
 
 from .config import Config
-from . import screens
+from . import guide, screens
 from .debug import draw
 from .strategy import Strategy
 from .vision import Analyzer
@@ -48,11 +48,19 @@ def cmd_run(args):
     taps, idle, frame = 0, 0, 0
     last_screen, last_screen_tap = None, 0.0
     level_streak = 0
+    loader = (lambda n: guide.from_file(args.guide_file)) if args.guide_file else None
+    tracker = guide.LevelTracker(args.level, online=cfg.follow_guide, loader=loader)
     print("Avviato. Ctrl+C per fermare.")
     try:
         while args.max_taps is None or taps < args.max_taps:
             img = dev.screenshot()
-            st = an.analyze(np.asarray(img))
+            arr = np.asarray(img)
+            st = an.analyze(arr)
+            # numero del livello (Home / Hai perso) e guida di yarnlooplevel.com per quel livello
+            kind, pt = screens.classify(arr) if st.belt_free is None else (None, None)
+            fresh = st.belt_free is not None and st.belt_free == (st.belt_cap or 5) and st.free_slots == len(st.slots)
+            tracker.update(st.belt_free is not None, fresh, kind, screens.level_number(arr, kind))
+            strat.guide = tracker.colors
             dec = strat.decide(st)
             frame += 1
             # il livello deve essere visibile in due screenshot di fila, e non subito dopo un pulsante
@@ -61,7 +69,7 @@ def cmd_run(args):
             if dec.moves and (level_streak < 2 or time.monotonic() - last_screen_tap < cfg.settle_time):
                 dec.moves, dec.reason = [], "aspetto che il livello sia pronto"
             print(
-                f"[{frame}] esposti: {_fmt(st.exposed)} | nastro: {_fmt(st.belt)} | "
+                f"[{frame}] livello {tracker.level or '?'} guida {strat.guide or '-'} | esposti: {_fmt(st.exposed)} | "
                 f"slot liberi {st.free_slots} -> {dec.reason}"
             )
             if args.save_debug:
@@ -80,7 +88,6 @@ def cmd_run(args):
 
             if st.belt_free is None and cfg.auto_buttons:
                 # fuori dal livello: Riprova / Continua / X / Livello N, solo se la schermata e' stabile
-                kind, pt = screens.classify(np.asarray(img))
                 if kind and kind == last_screen and time.monotonic() - last_screen_tap > cfg.screen_tap_every:
                     print(f"   {kind}: tocco {pt}")
                     if not args.dry_run:
@@ -160,6 +167,8 @@ def main(argv=None):
     r.add_argument("--dry-run", action="store_true", help="non tocca niente, mostra solo le decisioni")
     r.add_argument("--max-taps", type=int, help="fermati dopo N tocchi")
     r.add_argument("--save-debug", metavar="CARTELLA", help="salva ogni fotogramma annotato")
+    r.add_argument("--level", type=int, help="livello di partenza (altrimenti lo legge in Home / Hai perso)")
+    r.add_argument("--guide-file", help="pagina della guida salvata (.mht/.html) invece di scaricarla")
     r.set_defaults(func=cmd_run)
 
     a = sub.add_parser("analyze", help="analizza uno screenshot salvato")

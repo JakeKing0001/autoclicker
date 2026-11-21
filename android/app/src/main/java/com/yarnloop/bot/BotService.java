@@ -51,6 +51,25 @@ public class BotService extends AccessibilityService {
     private String lastScreen;
     private long lastScreenTap;
     private int levelStreak;
+    private final Guide.Tracker tracker = new Guide.Tracker();
+    private boolean followGuide = true;
+    private final java.util.Map<Integer, int[]> guides = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Set<Integer> loading = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** Priorita' dei colori dalla guida del livello; la pagina si scarica in un thread a parte. */
+    private int[] guideFor(int level) {
+        if (!followGuide || level <= 0) return new int[Vision.N];
+        int[] g = guides.get(level);
+        if (g != null) return g;
+        if (loading.add(level)) {
+            SharedPreferences p = getSharedPreferences(MainActivity.PREFS, MODE_PRIVATE);
+            new Thread(() -> {
+                guides.put(level, Guide.load(p, level));
+                loading.remove(level);
+            }).start();
+        }
+        return new int[Vision.N];
+    }
     private int frame, taps;
 
     private final Runnable loop = this::step;
@@ -186,6 +205,9 @@ public class BotService extends AccessibilityService {
         afterBurst = p.getInt("after_burst_ms", 500);
         dryRun = p.getBoolean("dry_run", false);
         autoButtons = p.getBoolean("auto_buttons", true);
+        followGuide = p.getBoolean("follow_guide", true);
+        int startLevel = p.getInt("level", 0);
+        if (startLevel > 0) tracker.level = startLevel;
         gamePackage = currentPackage();
         frame = 0;
         taps = 0;
@@ -258,6 +280,12 @@ public class BotService extends AccessibilityService {
         bmp.recycle();
 
         Vision.State st = new Vision(px, w, h).analyze();
+        // fuori dal livello: che schermata e'? (serve anche a leggere il numero del livello)
+        Screens.Result scr = st.beltFree < 0 ? Screens.classify(px, w, h) : null;
+        boolean fresh = st.beltFree >= 0 && st.beltFree == (st.beltCap > 0 ? st.beltCap : 5)
+                && st.freeSlots() == st.slots.size();
+        tracker.update(st.beltFree >= 0, fresh, scr != null ? scr.name : null, Screens.levelNumber(px, w, h, scr));
+        strategy.guide = guideFor(tracker.level);
         Strategy.Decision d0 = strategy.decide(st);
         frame++;
         // il livello deve vedersi in due screenshot di fila e non subito dopo un pulsante
@@ -267,22 +295,24 @@ public class BotService extends AccessibilityService {
         Strategy.Decision d = (!d0.moves.isEmpty() && settling)
                 ? new Strategy.Decision(new java.util.ArrayList<>(), "aspetto che il livello sia pronto") : d0;
         String text = frame + ": " + d.reason
-                + "\nesposti: " + fmt(st.exposed)
+                + "\nliv. " + (tracker.level > 0 ? tracker.level : "?")
+                + (followGuide ? " · guida: " + Guide.describe(strategy.guide) : "")
+                + " · esposti: " + fmt(st.exposed)
                 + "\nposti sul nastro " + (st.beltFree >= 0 ? st.beltFree : "?") + " · slot liberi "
                 + st.freeSlots() + " · tocchi " + taps;
-        // fuori dal livello: Riprova / Continua / X / "Livello N", solo se la schermata e' stabile
-        Screens.Result scr = (st.beltFree < 0 && autoButtons) ? Screens.classify(px, w, h) : null;
+        // Riprova / Continua / X / "Livello N": solo se attivato e se la schermata e' stabile
+        final Screens.Result scrTap = autoButtons ? scr : null;
         main.post(() -> {
-            status.setText(scr != null ? frame + ": " + scr.name : text);
+            status.setText(scrTap != null ? frame + ": " + scrTap.name : text);
             if (!running) return;
             if (d.moves.isEmpty()) {
                 long t = android.os.SystemClock.uptimeMillis();
-                if (scr != null && scr.name.equals(lastScreen) && t - lastScreenTap > 2500) {
-                    if (!dryRun) tap(scr.x, scr.y);
+                if (scrTap != null && scrTap.name.equals(lastScreen) && t - lastScreenTap > 2500) {
+                    if (!dryRun) tap(scrTap.x, scrTap.y);
                     lastScreenTap = t;
                     lastScreen = null;
                 } else {
-                    lastScreen = scr != null ? scr.name : null;
+                    lastScreen = scrTap != null ? scrTap.name : null;
                 }
                 main.postDelayed(loop, idleDelay);
                 return;

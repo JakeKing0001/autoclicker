@@ -57,6 +57,7 @@ public final class Strategy {
     float reach = 1.3f;   // mentre gira scopre altra lana: raggiungibile = esposta x 1.3
     int minGain = 3;      // non mandare chi prenderebbe meno di cosi' (se non finisce)
     int maxParked = 2;    // slot al massimo occupati da rocchetti con colori non esposti
+    int[] guide = new int[Vision.N]; // priorita' dei colori dalla guida del livello (yarnlooplevel.com)
     int reserveSlots = 1;
 
     private static final class Tap {
@@ -311,6 +312,13 @@ public final class Strategy {
                 if (cd.slot) score += 3 * (st.slots.size() - st.freeSlots());
                 if (dc != null) score += Math.max(1, 6 - 2 * dc);
                 if (explore && small) score += 1;
+                // la guida del livello consiglia di cominciare da certi colori (peso 6: +50% e +3)
+                int gw = 0;
+                for (int i = 0; i < m.colors.length; i++) {
+                    int c = m.colors[i];
+                    if (c >= 0 && Math.min(cd.counts[i], avail[c]) > 0) gw = Math.max(gw, guide[c]);
+                }
+                score += gain * gw / 12 + gw / 2;
                 if (score > bestScore) {
                     bestScore = score;
                     best = cd;

@@ -62,6 +62,8 @@ class Config:
     # Fuori dal livello tocca da solo Riprova / Continua / X di chiusura / "Livello N"
     # (mai offerte a pagamento). La schermata deve essere uguale in due screenshot di fila.
     auto_buttons: bool = True
+    # Segui la guida di yarnlooplevel.com: i colori consigliati per il livello hanno la precedenza
+    follow_guide: bool = True
     screen_tap_every: float = 2.5  # secondi minimi tra due tocchi su queste schermate
     settle_time: float = 4.0       # dopo uno di questi tocchi, attesa prima di toccare i rocchetti
 

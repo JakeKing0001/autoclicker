@@ -60,6 +60,7 @@ class Strategy:
         self.sent: list[tuple] = []  # (tempo, colore, lana, torna negli slot 0/1) dei rocchetti partiti
         self.blocked: dict[tuple, float] = {}
         self.pending: list[_Tap] = []
+        self.guide: dict[str, int] = {}  # colore -> priorita' dalla guida del livello (yarnlooplevel.com)
 
     # ------------------------------------------------------------------ memoria
     def _recent(self) -> Counter:
@@ -277,6 +278,11 @@ class Strategy:
                     score += max(1, 6 - 2 * dig_cols[cell])
                 if explore and small:
                     score += 1  # il distributore ha gia' +4
+                # la guida del livello consiglia di cominciare da certi colori
+                # (peso 6 = primo passo della soluzione: +50% sulla lana raccolta e +3)
+                gw = max([self.guide.get(c, 0) for c, n in zip(m.colors, counts) if c and min(n, avail[c]) > 0],
+                         default=0)
+                score += gain * gw / 12 + gw / 2
                 if best is None or score > best[0]:
                     best = (score, m, kind, counts, cols, new_returns, frees, gain)
             if best is None:

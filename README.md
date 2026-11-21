@@ -15,6 +15,13 @@ tocca tanti rocchetti quanti sono i posti liberi indicati dal contatore "N/5"):
 5. **Scavo** – se nessun colore utile è in prima fila, toglie subito (senza aspettare il nastro)
    i rocchetti che ne coprono uno utile, lasciando sempre uno slot libero.
 
+**Guida dei livelli**: legge il numero del livello (pulsante "Livello N" in Home e pannello
+"Hai perso"; quando vince passa da solo al successivo), scarica la pagina del livello da
+[yarnlooplevel.com](https://yarnlooplevel.com) e dalla "Full Solution" ricava l'ordine dei colori
+(es. livello 36: blu e bianco prima, poi marrone). È una preferenza: a parità di lana raccolta vince il
+colore consigliato (fino a +50%), ma decide sempre lo schermo. Le pagine scaricate restano salvate.
+Versione Python: `run --level 36` per il livello di partenza, `--guide-file pagina.mht` per una pagina salvata.
+
 Regole speciali che conosce:
 
 - **Rocchetti collegati** da un'asta (anche negli slot): partono solo se sono entrambi in prima fila,

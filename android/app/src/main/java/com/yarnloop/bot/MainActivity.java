@@ -23,7 +23,8 @@ public class MainActivity extends Activity {
 
     private TextView serviceState;
     private EditText tapDelay, maxBelt;
-    private CheckBox dryRun, autoButtons;
+    private CheckBox dryRun, autoButtons, followGuide;
+    private EditText level;
 
     private int dp(float v) {
         return (int) (v * getResources().getDisplayMetrics().density + 0.5f);
@@ -101,6 +102,11 @@ public class MainActivity extends Activity {
         autoButtons.setText("Tocca da solo Riprova / Continua / X / Livello (mai le offerte a pagamento)");
         autoButtons.setChecked(p.getBoolean("auto_buttons", true));
         col.addView(autoButtons);
+        followGuide = new CheckBox(this);
+        followGuide.setText("Segui la guida di yarnlooplevel.com (colori consigliati per il livello)");
+        followGuide.setChecked(p.getBoolean("follow_guide", true));
+        col.addView(followGuide);
+        level = number(col, "Livello attuale (0 = lo legge da solo in Home)", p.getInt("level", 0));
         text(col, "Le impostazioni valgono dal prossimo ▶.", 12).setTextColor(Color.GRAY);
 
         text(col, "Il bot tocca i rocchetti solo quando vede il contatore del nastro (N/5): sotto i popup, "
@@ -129,6 +135,8 @@ public class MainActivity extends Activity {
                 .putInt("max_belt", parse(maxBelt, 5, 1, 20))
                 .putBoolean("dry_run", dryRun.isChecked())
                 .putBoolean("auto_buttons", autoButtons.isChecked())
+                .putBoolean("follow_guide", followGuide.isChecked())
+                .putInt("level", parse(level, 0, 0, 5000))
                 .apply();
     }
 

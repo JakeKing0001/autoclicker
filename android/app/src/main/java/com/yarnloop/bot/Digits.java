@@ -29,7 +29,7 @@ final class Digits {
 
     /** Legge i caratteri bianchi alti circa digitH pixel nel rettangolo, da sinistra a destra. */
     static String read(int[] px, int w, int h, int x0, int y0, int x1, int y1, float digitH) {
-        List<float[]> found = scan(px, w, h, x0, y0, x1, y1, digitH, 0.22f, null);
+        List<float[]> found = scan(px, w, h, x0, y0, x1, y1, digitH, 0.22f, null, 0.75f);
         if (found.isEmpty()) return "";
         found.sort((a, b) -> Float.compare(a[0], b[0]));
         float[] ys = new float[found.size()];
@@ -47,7 +47,12 @@ final class Digits {
      * lista di {x centro, y centro, valore}. skip = rettangolo da ignorare {x0,y0,x1,y1} o null.
      */
     static List<int[]> find(int[] px, int w, int h, int x0, int y0, int x1, int y1, float digitH, int[][] skip) {
-        List<float[]> found = scan(px, w, h, x0, y0, x1, y1, digitH, 0.2f, skip);
+        return find(px, w, h, x0, y0, x1, y1, digitH, skip, 0.75f);
+    }
+
+    static List<int[]> find(int[] px, int w, int h, int x0, int y0, int x1, int y1, float digitH, int[][] skip,
+                            float minRatio) {
+        List<float[]> found = scan(px, w, h, x0, y0, x1, y1, digitH, 0.2f, skip, minRatio);
         found.sort((a, b) -> Float.compare(a[0], b[0]));
         List<float[]> groups = new ArrayList<>(); // {x0, x1, y, valore, cifre}
         for (float[] f : found) {
@@ -73,7 +78,7 @@ final class Digits {
 
     /** Componenti bianche della dimensione di una cifra, riconosciute: {x0, x1, y centro, indice modello}. */
     private static List<float[]> scan(int[] px, int w, int h, int x0, int y0, int x1, int y1, float digitH,
-                                      float maxDist, int[][] skip) {
+                                      float maxDist, int[][] skip, float minRatio) {
         x0 = Math.max(0, x0);
         y0 = Math.max(0, y0);
         x1 = Math.min(w, x1);
@@ -113,7 +118,7 @@ final class Digits {
             }
             if (qt < minPx) continue;
             int cw = bx1 - bx0 + 1, ch = by1 - by0 + 1;
-            if (ch < 0.75f * digitH || ch > 1.3f * digitH || cw > 1.4f * ch) continue;
+            if (ch < minRatio * digitH || ch > 1.3f * digitH || cw > 1.4f * ch) continue;
             // normalizza su griglia GHxGW
             float[] v = new float[GW * GH];
             for (int gy = 0; gy < GH; gy++)
@@ -144,6 +149,43 @@ final class Digits {
             if (bd <= maxDist) found.add(new float[]{x0 + bx0, x0 + bx1 + 1, y0 + (by0 + by1) / 2f, best});
         }
         return found;
+    }
+
+    /**
+     * Numero del livello in una scritta tipo "Livello 35" nel rettangolo: l'altezza delle cifre e' quella
+     * del carattere piu' alto (la "o" di "Livello" non diventa uno 0). Il numero piu' a destra, o -1.
+     */
+    static int readLevel(int[] px, int w, int h, int x0, int y0, int x1, int y1) {
+        x0 = Math.max(0, x0);
+        y0 = Math.max(0, y0);
+        x1 = Math.min(w, x1);
+        y1 = Math.min(h, y1);
+        int W = x1 - x0, H = y1 - y0, maxH = 0;
+        if (W <= 0 || H <= 0) return -1;
+        boolean[] m = new boolean[W * H], seen = new boolean[W * H];
+        for (int y = 0; y < H; y++) for (int x = 0; x < W; x++) m[y * W + x] = white(px[(y0 + y) * w + x0 + x]);
+        int[] q = new int[W * H];
+        for (int i = 0; i < m.length; i++) {
+            if (!m[i] || seen[i]) continue;
+            int qh = 0, qt = 0, bx0 = W, by0 = H, bx1 = -1, by1 = -1;
+            q[qt++] = i;
+            seen[i] = true;
+            while (qh < qt) {
+                int k = q[qh++], ky = k / W, kx = k % W;
+                bx0 = Math.min(bx0, kx); bx1 = Math.max(bx1, kx); by0 = Math.min(by0, ky); by1 = Math.max(by1, ky);
+                if (ky > 0 && m[k - W] && !seen[k - W]) { seen[k - W] = true; q[qt++] = k - W; }
+                if (ky < H - 1 && m[k + W] && !seen[k + W]) { seen[k + W] = true; q[qt++] = k + W; }
+                if (kx > 0 && m[k - 1] && !seen[k - 1]) { seen[k - 1] = true; q[qt++] = k - 1; }
+                if (kx < W - 1 && m[k + 1] && !seen[k + 1]) { seen[k + 1] = true; q[qt++] = k + 1; }
+            }
+            int ch = by1 - by0 + 1, cw = bx1 - bx0 + 1;
+            if (qt >= 60 && ch >= 25 && ch <= 100 && cw < ch) maxH = Math.max(maxH, ch);
+        }
+        if (maxH == 0) return -1;
+        List<int[]> nums = find(px, w, h, x0, y0, x1, y1, maxH, null, 0.9f);
+        int[] best = null;
+        for (int[] n : nums) if (best == null || n[0] > best[0]) best = n;
+        return best != null && best[2] >= 1 && best[2] <= 5000 ? best[2] : -1;
     }
 
     /** Numero intero (prima di un'eventuale "/"), oppure -1. */

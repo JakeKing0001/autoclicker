@@ -78,3 +78,22 @@ def classify(img: np.ndarray):
             return "chiudo (X)", (x0 + mx, y0 + my)
 
     return None, None
+
+
+LEVEL_HOME = _r(330, 1880, 760, 2030)   # pulsante "Livello N" della Home
+LEVEL_PANEL = _r(200, 420, 880, 570)    # titolo "Livello N" del pannello Hai perso
+
+
+def level_number(img: np.ndarray, kind: str | None):
+    """Numero del livello, letto solo dove e' affidabile: pulsante della Home o titolo del pannello."""
+    if not kind:
+        return None
+    if kind.startswith("Home"):
+        rc = LEVEL_HOME
+    elif kind.startswith("pulsante"):
+        rc = LEVEL_PANEL
+    else:
+        return None
+    h, w = img.shape[:2]
+    x0, y0, x1, y1 = int(rc[0] * w), int(rc[1] * h), int(rc[2] * w), int(rc[3] * h)
+    return D.read_level(img[y0:y1, x0:x1])

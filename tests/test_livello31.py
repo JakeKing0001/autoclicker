@@ -145,6 +145,42 @@ def test_slot_glow_is_not_a_link():
     assert st.slot_links == {0: 1, 1: 0}
 
 
+def test_guide_level36():
+    from yarnloop_bot import guide
+    page = os.path.join(os.path.dirname(__file__), "..", "examples", "guida_livello36.html")
+    pr = guide.from_html(open(page, encoding="utf-8").read())
+    # "Start with the blue wave strip and the widest white or gray sky", "Bring in brown hull ... next"
+    assert pr["blue"] == pr["white"] == 6 and pr["brown"] == 2
+
+
+def test_level_number_and_tracker():
+    from yarnloop_bot import guide
+    from yarnloop_bot.screens import classify, level_number
+    for f in ("home", "home_ads", "hai_perso"):
+        img = np.asarray(Image.open(os.path.join(os.path.dirname(__file__), "..", "examples", "screens", f + ".jpg")).convert("RGB"))
+        assert level_number(img, classify(img)[0]) == 35, f
+    t = guide.LevelTracker(None, loader=lambda n: {"white": n})
+    t.update(False, False, "Home: avvio il livello", 35)
+    t.update(True, True, None, None)
+    assert t.level == 35 and t.colors == {"white": 35}
+    t.update(False, False, "pulsante Riprova/Continua", 35)   # perso -> Riprova
+    t.update(True, True, None, None)
+    assert t.level == 35
+    t.update(False, False, None, None)                         # vinto (schermata non letta)
+    t.update(True, True, None, None)
+    assert t.level == 36
+
+
+def test_guide_changes_choice():
+    """A parita' (giallo 7 e verde 5 negli slot, un solo posto) la guida decide."""
+    st = _state()
+    st.belt_free = 1
+    assert Strategy(Config()).decide(st).moves[0].spool.color == "yellow"
+    s = Strategy(Config())
+    s.guide = {"green": 6}
+    assert s.decide(st).moves[0].spool.color == "green"
+
+
 def test_no_taps_outside_level():
     """Sotto i popup (Spazio finito, offerte) il contatore non si legge: nessun tocco sulla griglia."""
     for f in ("spazio_finito", "vuoi_procedere", "hai_perso", "home_offerta"):

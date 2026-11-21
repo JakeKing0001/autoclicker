@@ -10,8 +10,8 @@ android {
         applicationId "com.yarnloop.bot"
         minSdk 30          // Android 11: serve per gli screenshot dal servizio di accessibilita'
         targetSdk 35
-        versionCode 7
-        versionName "1.6"
+        versionCode 8
+        versionName "1.7"
     }
 
     // Chiave fissa nel repository, cosi' le nuove versioni si installano sopra le vecchie

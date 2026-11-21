@@ -97,13 +97,13 @@ def read_int(rgb: np.ndarray, digit_h: float):
     return int(s) if s.isdigit() else None
 
 
-def find(rgb: np.ndarray, digit_h: float, max_dist: float = 0.2):
+def find(rgb: np.ndarray, digit_h: float, max_dist: float = 0.2, min_ratio: float = 0.75):
     """Tutti i numeri bianchi nell'immagine: lista di (x, y, valore) con x, y al centro del numero."""
     m = white_mask(rgb)
     found = []
     for x0, y0, x1, y1, n in components(m, min_px=int(digit_h * digit_h * 0.08)):
         h, w = y1 - y0, x1 - x0
-        if not (0.75 * digit_h <= h <= 1.3 * digit_h) or w > 1.4 * h:
+        if not (min_ratio * digit_h <= h <= 1.3 * digit_h) or w > 1.4 * h:
             continue
         c, d = classify_features(*normalize(m[y0:y1, x0:x1]))
         if d <= max_dist and c.isdigit():
@@ -119,3 +119,17 @@ def find(rgb: np.ndarray, digit_h: float, max_dist: float = 0.2):
         else:
             out.append(list(f))
     return [((a + b) / 2, y, int(t)) for a, b, y, t in out]
+
+
+def read_level(rgb: np.ndarray):
+    """Numero del livello in una scritta tipo "Livello 35": l'altezza delle cifre si prende dal
+    carattere piu' alto (cosi' la "o" di "Livello" non diventa uno 0). Restituisce il numero o None."""
+    m = white_mask(rgb)
+    hs = [y1 - y0 for x0, y0, x1, y1, n in components(m, min_px=60) if 25 <= y1 - y0 <= 100 and x1 - x0 < y1 - y0]
+    if not hs:
+        return None
+    nums = find(rgb, max(hs), min_ratio=0.9)
+    if not nums:
+        return None
+    n = max(nums, key=lambda t: t[0])[2]  # il numero piu' a destra
+    return n if 1 <= n <= 5000 else None
