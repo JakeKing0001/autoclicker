@@ -53,7 +53,9 @@ public final class Strategy {
     long recentWindowMs = 2500;
     long tapCheckMs = 450;
     long blockMs = 6000;
-    long loopMs = 8000;   // quanto resta in giro un rocchetto (circa un giro di nastro)
+    long arriveMs = 1500; // dopo il tocco, tempo per arrivare sul nastro
+    float reach = 1.3f;   // mentre gira scopre altra lana: raggiungibile = esposta x 1.3
+    int minGain = 3;      // non mandare chi prenderebbe meno di cosi' (se non finisce)
     int reserveSlots = 1;
 
     private static final class Tap {
@@ -202,16 +204,20 @@ public final class Strategy {
         int seats = st.beltFree;
         if (seats <= 0) return new Decision(moves, "nastro pieno");
 
-        sent.removeIf(e -> now - e[0] >= Math.max(recentWindowMs, loopMs));
-        int[] avail = new int[Vision.N];
+        // lana che stanno per prendere i rocchetti gia' sul nastro (numeri letti accanto a loro)
+        // e quelli appena toccati che non sono ancora arrivati; chi non ce la fa tornera' negli slot
+        sent.removeIf(e -> now - e[0] >= Math.max(recentWindowMs, arriveMs));
+        int[] reachable = new int[Vision.N], taken = new int[Vision.N], avail = new int[Vision.N];
+        for (int c = 0; c < Vision.N; c++) reachable[c] = (int) (st.exposed[c] * reach);
+        List<int[]> inFlight = new ArrayList<>(st.beltSpools);
+        for (long[] e : sent) if (now - e[0] < arriveMs) inFlight.add(new int[]{(int) e[1], (int) e[2]});
+        inFlight.sort((a, b) -> Integer.compare(a[1], b[1]));
         int returning = 0;
-        for (int c = 0; c < Vision.N; c++) avail[c] = st.exposed[c];
-        for (long[] e : sent)
-            if (now - e[0] < loopMs) {
-                avail[(int) e[1]] -= (int) e[2];
-                returning += (int) e[3];
-            }
-        for (int c = 0; c < Vision.N; c++) avail[c] = Math.max(0, avail[c]);
+        for (int[] e : inFlight) {
+            if (taken[e[0]] + e[1] > reachable[e[0]]) returning++;
+            taken[e[0]] += e[1];
+        }
+        for (int c = 0; c < Vision.N; c++) avail[c] = Math.max(0, reachable[c] - taken[c]);
         int room = st.freeSlots() - returning - reserveSlots;
 
         // --- candidati
@@ -282,9 +288,9 @@ public final class Strategy {
                     if (cd.counts[i] > avail[c]) finishes = false;
                 }
                 Integer dc = cd.slot ? null : digCost.get(enc(m.spool.index, rowOf(st, m)));
-                if (gain <= 0 && dc == null) continue;
+                if (dc == null && (gain <= 0 || (gain < minGain && !finishes))) continue; // posto sprecato
                 int returns = finishes ? 0 : m.colors.length;
-                if (!cd.slot && returns > room) continue;
+                if (!cd.slot && returns > 0 && returns > room) continue;
                 int score = gain + (finishes ? 5 : 0) + (m.refills ? 4 : 0);
                 if (cd.slot) score += 3 * (st.slots.size() - st.freeSlots());
                 if (dc != null) score += Math.max(1, 6 - 2 * dc);

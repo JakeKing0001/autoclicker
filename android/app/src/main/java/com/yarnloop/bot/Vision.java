@@ -96,6 +96,8 @@ public final class Vision {
         /** Posti liberi sul nastro (contatore "N/5"), -1 = non letto = non siamo nel livello. */
         public int beltFree = -1;
         public int beltCap = -1;
+        /** Rocchetti sul nastro: {colore, lana che manca} (numeri letti accanto a loro). */
+        public final List<int[]> beltSpools = new ArrayList<>();
 
         public int freeSlots() {
             int n = 0;
@@ -219,6 +221,7 @@ public final class Vision {
         String[] parts = txt.split("/", -1);
         st.beltFree = parts[0].matches("\\d{1,2}") ? Integer.parseInt(parts[0]) : -1;
         st.beltCap = parts.length > 1 && parts[1].matches("\\d{1,2}") ? Integer.parseInt(parts[1]) : -1;
+        if (st.beltFree >= 0) beltLabels(st);
         int[] S = rect(SLOTS);
         int hw = (int) (SPOOL_W * w / 2);
         for (Spool s : st.slots)
@@ -533,29 +536,35 @@ public final class Vision {
         int[][] poly = {{x0 + cc, y0}, {x1 - cc, y0}, {x1, y0 + cc}, {x1, y1 - cc},
                 {x1 - cc, y1}, {x0 + cc, y1}, {x0, y1 - cc}, {x0, y0 + cc}, {x0 + cc, y0}};
         List<Integer> seq = new ArrayList<>();
+        List<int[]> pts = new ArrayList<>();
         for (int i = 0; i + 1 < poly.length; i++) {
             int ax = poly[i][0], ay = poly[i][1], bx = poly[i + 1][0], by = poly[i + 1][1];
             int n = Math.max(1, (int) (Math.hypot(bx - ax, by - ay) / step));
             for (int k = 0; k < n; k++) {
                 int x = ax + (bx - ax) * k / n, y = ay + (by - ay) * k / n;
+                pts.add(new int[]{x, y});
                 boolean skip = false;
                 for (int[] g : ign) if (g[0] <= x && x <= g[2] && g[1] <= y && y <= g[3]) skip = true;
                 seq.add(skip ? -1 : dominant(x - r, y - r, x + r + 1, y + r + 1, 0.35f, true));
             }
         }
+        int rotK = 0;
         if (!seq.isEmpty() && seq.get(0) >= 0) {
             int k = seq.indexOf(-1);
             if (k > 0) {
                 List<Integer> rot = new ArrayList<>(seq.subList(k, seq.size()));
                 rot.addAll(seq.subList(0, k));
                 seq = rot;
+                rotK = k;
             }
         }
+        int nPts = pts.size();
         int minLen = Math.max(3, (int) (0.06 * w) / step);
         int maxGap = Math.max(1, (int) (0.04 * w) / step);
         for (int i = 0; i <= maxGap; i++) seq.add(-1);
-        int cur = -1, n = 0, gap = 0;
-        for (int s : seq) {
+        int cur = -1, n = 0, gap = 0, start = 0;
+        for (int i = 0; i < seq.size(); i++) {
+            int s = seq.get(i);
             if (s >= 0 && s == cur) {
                 n++;
                 gap = 0;
@@ -565,10 +574,44 @@ public final class Vision {
                 gap++;
                 continue;
             }
-            if (cur >= 0 && n >= minLen) st.belt[cur]++;
+            if (cur >= 0 && n >= minLen) {
+                st.belt[cur]++;
+                int mid = (start + i - gap) / 2;
+                int[] p = pts.get((mid + rotK) % nPts);
+                beltPos.add(new int[]{cur, p[0], p[1]});
+            }
             cur = s;
             n = s >= 0 ? 1 : 0;
             gap = 0;
+            start = i;
         }
+    }
+
+    private final List<int[]> beltPos = new ArrayList<>(); // {colore, x, y} dei rocchetti visti sul nastro
+
+    /** Numeri accanto ai rocchetti sul nastro; quelli senza rocchetto colorato vicino sono neri. */
+    private void beltLabels(State st) {
+        int[] B = rect(BELT);
+        int pad = (int) (0.12f * w), inner = (int) (0.13f * w);
+        int X0 = Math.max(0, B[0] - pad), Y0 = Math.max(0, B[1] - (int) (0.03f * w));
+        int X1 = Math.min(w, B[2] + pad), Y1 = Math.min(h, B[3] + pad);
+        int[][] skip = {{B[0] + inner, B[1] + inner, B[2] - inner, B[3] - inner}, rect(COUNTER)};
+        List<int[]> labels = Digits.find(px, w, h, X0, Y0, X1, Y1, DIGIT_H * w, skip);
+        List<float[]> pairs = new ArrayList<>();
+        for (int li = 0; li < labels.size(); li++)
+            for (int si = 0; si < beltPos.size(); si++) {
+                float d = (float) Math.hypot(labels.get(li)[0] - beltPos.get(si)[1], labels.get(li)[1] - beltPos.get(si)[2]);
+                if (d <= 0.17f * w) pairs.add(new float[]{d, li, si});
+            }
+        pairs.sort((a, b) -> Float.compare(a[0], b[0]));
+        boolean[] usedL = new boolean[labels.size()], usedS = new boolean[beltPos.size()];
+        for (float[] p : pairs) {
+            int li = (int) p[1], si = (int) p[2];
+            if (usedL[li] || usedS[si]) continue;
+            usedL[li] = usedS[si] = true;
+            st.beltSpools.add(new int[]{beltPos.get(si)[0], labels.get(li)[2]});
+        }
+        for (int li = 0; li < labels.size(); li++)
+            if (!usedL[li]) st.beltSpools.add(new int[]{BLACK, labels.get(li)[2]});
     }
 }

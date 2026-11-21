@@ -25,6 +25,9 @@ Regole speciali che conosce:
 - **Rocchetti misteriosi "?"**: colore sconosciuto, il bot non scava per raggiungerli.
 - Ogni posto libero sul nastro va al rocchetto che **raccoglie più lana** (numero e lana esposta);
   chi non può finire torna negli slot, quindi ne manda solo finché negli slot c'è posto.
+  Non manda rocchetti che prenderebbero quasi niente (intasano il nastro: è così che si perde).
+- **Numeri sul nastro**: legge quanta lana manca a ogni rocchetto in giro, per sapere quanta lana
+  è già "prenotata" e quanti rocchetti torneranno negli slot.
 - Se un rocchetto toccato **non parte**, il bot lo lascia stare per qualche secondo e prova altro.
 - **Numeri**: legge il contatore dei posti liberi sul nastro, la lana che manca a ogni rocchetto
   (slot e prima fila) e quanti rocchetti restano nei distributori. Negli slot rimette in giro per primi

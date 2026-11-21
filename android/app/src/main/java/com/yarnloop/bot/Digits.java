@@ -29,19 +29,70 @@ final class Digits {
 
     /** Legge i caratteri bianchi alti circa digitH pixel nel rettangolo, da sinistra a destra. */
     static String read(int[] px, int w, int h, int x0, int y0, int x1, int y1, float digitH) {
+        List<float[]> found = scan(px, w, h, x0, y0, x1, y1, digitH, 0.22f, null);
+        if (found.isEmpty()) return "";
+        found.sort((a, b) -> Float.compare(a[0], b[0]));
+        float[] ys = new float[found.size()];
+        for (int i = 0; i < ys.length; i++) ys[i] = found.get(i)[2];
+        java.util.Arrays.sort(ys);
+        float ymid = ys.length % 2 == 1 ? ys[ys.length / 2] : (ys[ys.length / 2 - 1] + ys[ys.length / 2]) / 2f;
+        StringBuilder sb = new StringBuilder();
+        for (float[] f : found)
+            if (Math.abs(f[2] - ymid) < 0.5f * digitH) sb.append(DigitTemplates.CHARS[(int) f[3]]);
+        return sb.toString();
+    }
+
+    /**
+     * Tutti i numeri bianchi nel rettangolo (cifre vicine sulla stessa riga unite):
+     * lista di {x centro, y centro, valore}. skip = rettangolo da ignorare {x0,y0,x1,y1} o null.
+     */
+    static List<int[]> find(int[] px, int w, int h, int x0, int y0, int x1, int y1, float digitH, int[][] skip) {
+        List<float[]> found = scan(px, w, h, x0, y0, x1, y1, digitH, 0.2f, skip);
+        found.sort((a, b) -> Float.compare(a[0], b[0]));
+        List<float[]> groups = new ArrayList<>(); // {x0, x1, y, valore, cifre}
+        for (float[] f : found) {
+            String ch = DigitTemplates.CHARS[(int) f[3]];
+            if (!Character.isDigit(ch.charAt(0))) continue;
+            int d = ch.charAt(0) - '0';
+            boolean joined = false;
+            for (float[] g : groups)
+                if (Math.abs(f[2] - g[2]) < 0.4f * digitH && f[0] - g[1] >= -0.1f * digitH
+                        && f[0] - g[1] < 0.5f * digitH && g[4] < 2) {
+                    g[1] = f[1];
+                    g[3] = g[3] * 10 + d;
+                    g[4]++;
+                    joined = true;
+                    break;
+                }
+            if (!joined) groups.add(new float[]{f[0], f[1], f[2], d, 1});
+        }
+        List<int[]> out = new ArrayList<>();
+        for (float[] g : groups) out.add(new int[]{(int) ((g[0] + g[1]) / 2), (int) g[2], (int) g[3]});
+        return out;
+    }
+
+    /** Componenti bianche della dimensione di una cifra, riconosciute: {x0, x1, y centro, indice modello}. */
+    private static List<float[]> scan(int[] px, int w, int h, int x0, int y0, int x1, int y1, float digitH,
+                                      float maxDist, int[][] skip) {
         x0 = Math.max(0, x0);
         y0 = Math.max(0, y0);
         x1 = Math.min(w, x1);
         y1 = Math.min(h, y1);
         int W = x1 - x0, H = y1 - y0;
-        if (W <= 0 || H <= 0) return "";
+        if (W <= 0 || H <= 0) return new ArrayList<>();
         boolean[] m = new boolean[W * H];
         for (int y = 0; y < H; y++)
-            for (int x = 0; x < W; x++) m[y * W + x] = white(px[(y0 + y) * w + x0 + x]);
+            for (int x = 0; x < W; x++) {
+                boolean skipped = false;
+                if (skip != null)
+                    for (int[] k : skip)
+                        if (x0 + x >= k[0] && x0 + x < k[2] && y0 + y >= k[1] && y0 + y < k[3]) skipped = true;
+                m[y * W + x] = !skipped && white(px[(y0 + y) * w + x0 + x]);
+            }
         boolean[] seen = new boolean[W * H];
         int[] queue = new int[W * H];
         int minPx = (int) (digitH * digitH * 0.08);
-        List<float[]> found = new ArrayList<>(); // {x, ycentro, indice modello}
+        List<float[]> found = new ArrayList<>(); // {x0, x1, ycentro, indice modello}
         for (int i = 0; i < m.length; i++) {
             if (!m[i] || seen[i]) continue;
             int qh = 0, qt = 0;
@@ -90,18 +141,9 @@ final class Digits {
                     best = j;
                 }
             }
-            if (bd <= 0.22f) found.add(new float[]{bx0, (by0 + by1) / 2f, best});
+            if (bd <= maxDist) found.add(new float[]{x0 + bx0, x0 + bx1 + 1, y0 + (by0 + by1) / 2f, best});
         }
-        if (found.isEmpty()) return "";
-        found.sort((a, b) -> Float.compare(a[0], b[0]));
-        float[] ys = new float[found.size()];
-        for (int i = 0; i < ys.length; i++) ys[i] = found.get(i)[1];
-        java.util.Arrays.sort(ys);
-        float ymid = ys.length % 2 == 1 ? ys[ys.length / 2] : (ys[ys.length / 2 - 1] + ys[ys.length / 2]) / 2f;
-        StringBuilder sb = new StringBuilder();
-        for (float[] f : found)
-            if (Math.abs(f[1] - ymid) < 0.5f * digitH) sb.append(DigitTemplates.CHARS[(int) f[2]]);
-        return sb.toString();
+        return found;
     }
 
     /** Numero intero (prima di un'eventuale "/"), oppure -1. */

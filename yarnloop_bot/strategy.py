@@ -64,7 +64,7 @@ class Strategy:
     # ------------------------------------------------------------------ memoria
     def _recent(self) -> Counter:
         now = time.monotonic()
-        self.sent = [e for e in self.sent if now - e[0] < max(self.cfg.recent_window, self.cfg.loop_time)]
+        self.sent = [e for e in self.sent if now - e[0] < max(self.cfg.recent_window, self.cfg.arrive_time)]
         return Counter(e[1] for e in self.sent)
 
     def remember(self, move: Move) -> None:
@@ -169,14 +169,21 @@ class Strategy:
             return Decision([], "nastro pieno")
 
         now = time.monotonic()
-        loop = [e for e in self.sent if now - e[0] < cfg.loop_time]
+        # lana che i rocchetti gia' sul nastro stanno per prendere (numeri letti accanto a loro),
+        # piu' quelli appena toccati che non sono ancora arrivati sul nastro
+        reach = Counter({c: int(st.exposed[c] * cfg.reach) for c in st.exposed})
         taken = Counter()
+        on_belt = sorted(st.belt_spools, key=lambda e: e[1])
+        for e in self.sent:
+            if now - e[0] < cfg.arrive_time:
+                on_belt.append((e[1], e[2]))
         returning = 0
-        for e in loop:
-            taken[e[1]] += e[2]
-            returning += e[3] if len(e) > 3 else 0
-        avail = Counter({c: max(0, st.exposed[c] - taken[c]) for c in st.exposed})
-        # slot che restano liberi anche se tornano tutti quelli che non finiranno
+        for c, n in sorted(on_belt, key=lambda e: e[1]):
+            if taken[c] + n > reach[c]:
+                returning += 1  # non finira': tornera' in uno slot
+            taken[c] += n
+        avail = Counter({c: max(0, reach[c] - taken[c]) for c in reach})
+        # slot che restano liberi anche quando tornano quelli che non finiranno
         room = st.free_slots - returning - cfg.reserve_slots
 
         def n_of(sp):
@@ -235,12 +242,12 @@ class Strategy:
                 finishes = all(n <= avail[c] for c, n in zip(m.colors, counts) if c)
                 cell = (m.spool.column, m.spool.row)
                 dig = kind == "grid" and cell in dig_cols
-                if gain <= 0 and not dig:
-                    continue
+                if not dig and (gain <= 0 or (gain < cfg.min_gain and not finishes)):
+                    continue  # occuperebbe un posto sul nastro per niente
                 # chi non finisce tornera' in uno slot: serve spazio (gli slot liberano il loro posto)
                 new_returns = 0 if finishes else len(m.colors)
                 frees = len(m.colors) if kind == "slot" else 0
-                if kind == "grid" and new_returns > room:
+                if kind == "grid" and new_returns > 0 and new_returns > room:
                     continue
                 score = gain
                 if finishes:

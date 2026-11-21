@@ -119,6 +119,16 @@ def test_35_white_first():
     assert [(m.spool.color, m.spool.count) for m in dec.moves] == [("white", 50)], dec
 
 
+def test_finisher_allowed_with_full_slots():
+    """Slot quasi pieni: il bianco 30 (finisce, non torna negli slot) va mandato lo stesso."""
+    img = os.path.join(os.path.dirname(__file__), "..", "examples", "livello35_slotpieni.jpg")
+    st = Analyzer(Config()).analyze(np.asarray(Image.open(img).convert("RGB")))
+    assert st.free_slots == 1 and st.belt_free == 1
+    assert len(st.belt_spools) >= 3  # numeri accanto ai rocchetti sul nastro
+    dec = Strategy(Config()).decide(st)
+    assert [(m.spool.color, m.spool.count) for m in dec.moves] == [("white", 30)], dec
+
+
 def test_no_taps_outside_level():
     """Sotto i popup (Spazio finito, offerte) il contatore non si legge: nessun tocco sulla griglia."""
     for f in ("spazio_finito", "vuoi_procedere", "hai_perso", "home_offerta"):

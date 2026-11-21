@@ -42,6 +42,7 @@ class State:
     slot_links: dict = field(default_factory=dict)  # indice slot -> indice slot collegato
     belt_free: int | None = None                    # posti liberi sul nastro (contatore "N/5")
     belt_cap: int | None = None                     # posti in tutto (il 5 di "N/5")
+    belt_spools: list = field(default_factory=list)  # [(colore, lana che manca)] dei rocchetti sul nastro
     counts: dict = field(default_factory=dict)      # (col, riga) -> numero letto (prima fila e distributori)
 
     def front_row(self, col):
@@ -332,16 +333,20 @@ class Analyzer:
             name, _ = C.dominant(patch, min_fraction=0.35, ignore_black=True)
             seq.append(name)
         # gira in modo che la sequenza non inizi a meta' di un rocchetto
+        rot = 0
         if seq and seq[0] is not None:
             k = next((i for i, s in enumerate(seq) if s is None), 0)
             seq = seq[k:] + seq[:k]
+            rot = k
         # Raggruppa campioni consecutivi dello stesso colore, tollerando piccoli buchi
         # (un rocchetto di traverso ha il centro stretto)
         belt = Counter()
+        spools = []  # (colore, x, y) al centro di ogni rocchetto visto sul nastro
         min_len = max(3, int(0.06 * w) // step)
         max_gap = max(1, int(0.04 * w) // step)
-        cur, n, gap = None, 0, 0
-        for s in seq + [None] * (max_gap + 1):
+        cur, n, gap, start = None, 0, 0, 0
+        tail = [None] * (max_gap + 1)
+        for i, s in enumerate(seq + tail):
             if s is not None and s == cur:
                 n += 1
                 gap = 0
@@ -351,8 +356,44 @@ class Analyzer:
                 continue
             if cur is not None and n >= min_len:
                 belt[cur] += 1
-            cur, n, gap = s, (1 if s is not None else 0), 0
+                mid = (start + i - gap) // 2
+                px, py = pts[(mid + rot) % len(pts)]
+                spools.append((cur, px, py))
+            cur, n, gap, start = s, (1 if s is not None else 0), 0, i
+        self._belt_spools = spools
         return belt
+
+    def belt_labels(self, img: np.ndarray, spools):
+        """Numeri accanto ai rocchetti sul nastro = lana che manca a ciascuno.
+
+        Ogni numero viene abbinato al rocchetto colorato piu' vicino; i numeri senza rocchetto
+        sono di rocchetti neri (sul nastro scuro non si vedono). Restituisce [(colore, numero)].
+        """
+        h, w = img.shape[:2]
+        x0, y0, x1, y1 = _px(self.cfg.belt, w, h)
+        pad, inner = int(0.12 * w), int(0.13 * w)
+        # sopra il nastro c'e' la scritta "Livello N": li' si guarda poco
+        X0, Y0, X1, Y1 = max(0, x0 - pad), max(0, y0 - int(0.03 * w)), min(w, x1 + pad), min(h, y1 + pad)
+        sub = img[Y0:Y1, X0:X1].copy()
+        # tieni solo la fascia attorno al nastro (dentro c'e' il disegno, fuori l'interfaccia)
+        sub[(y0 + inner - Y0):(y1 - inner - Y0), (x0 + inner - X0):(x1 - inner - X0)] = 0
+        cx0, cy0, cx1, cy1 = _px(self.cfg.counter, w, h)
+        sub[max(0, cy0 - Y0):max(0, cy1 - Y0), max(0, cx0 - X0):max(0, cx1 - X0)] = 0
+        labels = [(x + X0, y + Y0, v) for x, y, v in D.find(sub, self.cfg.digit_h * w)]
+        self._belt_label_pos = labels
+        pairs = sorted(((np.hypot(lx - sx, ly - sy), li, si) for li, (lx, ly, _) in enumerate(labels)
+                        for si, (_, sx, sy) in enumerate(spools)))
+        used_l, used_s, out = set(), set(), []
+        for dist, li, si in pairs:
+            if dist > 0.17 * w or li in used_l or si in used_s:
+                continue
+            used_l.add(li)
+            used_s.add(si)
+            out.append((spools[si][0], labels[li][2]))
+        for li, (_, _, v) in enumerate(labels):
+            if li not in used_l:
+                out.append(("black", v))
+        return out
 
     # ------------------------------------------------------------------ tutto
     def analyze(self, img: np.ndarray) -> State:
@@ -363,6 +404,7 @@ class Analyzer:
         grid = self.grid(img, cls)
         xs, rows, mat = self._last_grid
         cells = {(c, r): mat[r][c] for r in range(len(rows)) for c in range(len(xs)) if mat[r][c]}
+        belt = self.belt(img)
         h, w = img.shape[:2]
         dh = self.cfg.digit_h * w
         cx0, cy0, cx1, cy1 = _px(self.cfg.counter, w, h)
@@ -393,7 +435,8 @@ class Analyzer:
             remaining=remaining,
             slots=slots,
             grid=grid,
-            belt=self.belt(img),
+            belt=belt,
+            belt_spools=self.belt_labels(img, self._belt_spools) if belt_free is not None else [],
             probes=probes,
             cells=cells,
             col_x=xs,

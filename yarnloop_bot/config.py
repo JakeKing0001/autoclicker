@@ -51,7 +51,9 @@ class Config:
     tap_gap: float = 0.12         # pausa tra due tocchi della stessa raffica (secondi)
     after_burst: float = 0.5      # pausa dopo una raffica, prima del prossimo screenshot
     idle_delay: float = 0.6       # attesa quando non c'e' niente da fare
-    loop_time: float = 8.0        # quanto tempo un rocchetto resta in giro sul nastro (circa un giro)
+    arrive_time: float = 1.5      # dopo il tocco, quanto ci mette un rocchetto ad arrivare sul nastro
+    reach: float = 1.3            # mentre gira scopre altra lana: la lana raggiungibile e' circa esposta x 1.3
+    min_gain: int = 3             # non mandare rocchetti che prenderebbero meno di cosi' (se non finiscono)
     recent_window: float = 2.5    # per quanti secondi un rocchetto appena toccato conta come "sul nastro"
     reserve_slots: int = 1        # slot da lasciare sempre liberi quando si scava
     tap_check: float = 0.45       # dopo quanto controllare se il rocchetto toccato e' partito
