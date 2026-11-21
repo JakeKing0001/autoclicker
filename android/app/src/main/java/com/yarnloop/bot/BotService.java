@@ -88,6 +88,10 @@ public class BotService extends AccessibilityService {
         return new int[Vision.N];
     }
 
+    private int frame, taps;
+
+    private final Runnable loop = this::step;
+
     // ------------------------------------------------------------------ ciclo di vita
     @Override
     protected void onServiceConnected() {
