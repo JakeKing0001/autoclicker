@@ -52,6 +52,26 @@ def _is_x(white: np.ndarray, mx: int, my: int, bw: int) -> bool:
     return d1 >= 0.6 and d2 >= 0.6 and axes <= 0.25
 
 
+def find_close(img: np.ndarray):
+    """Centro della X rossa di chiusura in alto a destra di un pannello, o None."""
+    h, w = img.shape[:2]
+    # X rossa di chiusura in alto a destra: cerchio rosso con una X bianca in mezzo
+    x0, y0, x1, y1 = (int(CLOSE_AREA[0] * w), int(CLOSE_AREA[1] * h), int(CLOSE_AREA[2] * w), int(CLOSE_AREA[3] * h))
+    sub = img[y0:y1, x0:x1]
+    red = C.classify(sub) == C.index("red")
+    white = D.white_mask(sub)
+    for cx0, cy0, cx1, cy1, n in D.components(red, min_px=int((0.02 * w) ** 2)):
+        bw, bh = cx1 - cx0, cy1 - cy0
+        # la X di chiusura e' grande ~117 px; il "%" delle offerte in Home ~67 px
+        if not (0.09 * w <= bw <= 0.13 * w and 0.75 <= bw / bh <= 1.33):
+            continue
+        mx, my = (cx0 + cx1) // 2, (cy0 + cy1) // 2
+        if _is_x(white, mx, my, bw):
+            return (x0 + mx, y0 + my)
+
+    return None
+
+
 def classify(img: np.ndarray):
     """Restituisce (nome, (x, y) da toccare) oppure (None, None)."""
     h, w = img.shape[:2]
@@ -73,19 +93,9 @@ def classify(img: np.ndarray):
     if btn >= 0.6 and _frac(img, HOME_NAV, ["blue", "lightblue", "purple"], w, h) >= 0.5:
         return "Home: avvio il livello", (int(540 / 1080 * w), int(1950 / 2340 * h))
 
-    # X rossa di chiusura in alto a destra: cerchio rosso con una X bianca in mezzo
-    x0, y0, x1, y1 = (int(CLOSE_AREA[0] * w), int(CLOSE_AREA[1] * h), int(CLOSE_AREA[2] * w), int(CLOSE_AREA[3] * h))
-    sub = img[y0:y1, x0:x1]
-    red = C.classify(sub) == C.index("red")
-    white = D.white_mask(sub)
-    for cx0, cy0, cx1, cy1, n in D.components(red, min_px=int((0.02 * w) ** 2)):
-        bw, bh = cx1 - cx0, cy1 - cy0
-        # la X di chiusura e' grande ~117 px; il "%" delle offerte in Home ~67 px
-        if not (0.09 * w <= bw <= 0.13 * w and 0.75 <= bw / bh <= 1.33):
-            continue
-        mx, my = (cx0 + cx1) // 2, (cy0 + cy1) // 2
-        if _is_x(white, mx, my, bw):
-            return "chiudo (X)", (x0 + mx, y0 + my)
+    pt = find_close(img)
+    if pt:
+        return "chiudo (X)", pt
 
     return None, None
 

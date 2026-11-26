@@ -47,7 +47,7 @@ Regole speciali che conosce:
 
 Non tocca mai la barra dei bonus in basso (quelli che costano monete).
 
-## App Android (consigliata, senza PC)
+## App Android (senza PC)
 
 1. Scarica e installa [`apk/YarnLoopBot.apk`](apk/YarnLoopBot.apk) (Android 11 o superiore).
    Se chiede il permesso, consenti l'installazione da questa fonte.
@@ -61,7 +61,47 @@ Nell'app puoi cambiare la pausa tra i tocchi, il massimo di rocchetti sul nastro
 modalità "solo prova". Il codice è in [`android/`](android/) (Java, nessuna libreria esterna):
 `cd android && gradle assembleRelease`.
 
-## Versione Python (PC + ADB)
+## PC Windows + telefono col cavo (consigliato per farmare)
+
+Il PC fa i conti (più veloce e con più memoria del telefono), il telefono fa solo girare il gioco
+e intanto resta in carica. Oltre a giocare il livello, il bot da PC:
+
+- tocca **Riprova**, **Continua**, la **X** dei popup e **Livello N** in Home (mai offerte, monete o "Riempi");
+- con **Vite finite** aspetta e ogni 5 minuti chiude il pannello per vedere se le vite sono tornate;
+- se resta ferma una **schermata sconosciuta** (pubblicità, negozio, schermata di vittoria…) per 15 s
+  preme il tasto **Indietro**;
+- se una pubblicità apre il **Play Store** torna indietro e, se serve, riapre il gioco;
+- scrive il **registro** delle partite in `logs\partite.csv` e, quando perde, salva gli ultimi
+  40 fotogrammi in `logs\perso_livN_...` (mandameli per migliorarlo).
+
+### Installazione (una volta sola, ~30 minuti)
+
+1. **Python**: scaricalo da [python.org](https://www.python.org/downloads/windows/) e installalo
+   spuntando **"Add python.exe to PATH"**.
+2. **Il bot**: scarica lo ZIP del branch
+   ([link diretto](https://github.com/JakeKing0001/autoclicker/archive/refs/heads/ccr-86604c4e-d6x271.zip))
+   ed estrailo, per esempio in `C:\YarnLoopBot`.
+3. **ADB**: scarica [SDK Platform-Tools per Windows](https://developer.android.com/tools/releases/platform-tools),
+   estrai lo ZIP e metti la cartella **`platform-tools`** dentro la cartella del bot
+   (`C:\YarnLoopBot\platform-tools\adb.exe`).
+4. Doppio clic su **`installa.bat`** (installa numpy, Pillow e scipy).
+5. **Telefono**: *Opzioni sviluppatore* → attiva **Debug USB**, **Rimani attivo** (schermo sempre acceso
+   in carica) e, sugli Xiaomi, **Debug USB (impostazioni di sicurezza)**. Collega il cavo e, quando il
+   telefono chiede "Consentire il debug USB?", spunta **Consenti sempre**.
+6. Doppio clic su **`controlla.bat`**: deve comparire il telefono come `device`.
+
+### Uso
+
+1. Apri Yarn Loop sul telefono (in Home o dentro un livello). **Non** avviare il ▶ dell'app sul telefono.
+2. Doppio clic su **`prova.bat`** per vedere cosa farebbe senza toccare, poi **`farma.bat`** per farlo giocare.
+3. Per fermarlo: **Ctrl+C** nella finestra nera.
+
+Opzioni (si possono aggiungere in fondo alla riga dei .bat o da terminale): `--level 36` livello di
+partenza, `--max-taps 500`, `--save-debug debug` salva ogni fotogramma annotato, `--no-log`.
+Le pause e i tempi si cambiano con un `config.json` (`python -m yarnloop_bot config` lo crea):
+`back_after`, `lives_retry`, `after_burst`, `tap_gap`, ...
+
+## Versione Python (PC + ADB) — dettagli
 
 ## Cosa serve
 

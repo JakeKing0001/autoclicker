@@ -27,6 +27,25 @@ def white_mask(rgb: np.ndarray) -> np.ndarray:
 
 def components(mask: np.ndarray, min_px: int = 40):
     """Componenti connesse (4-vicini): lista di (x0, y0, x1, y1, pixel)."""
+    try:
+        from scipy import ndimage
+    except ImportError:
+        return _components_py(mask, min_px)
+    lab, n = ndimage.label(mask)
+    if n == 0:
+        return []
+    sizes = np.bincount(lab.ravel())
+    out = []
+    for i, sl in enumerate(ndimage.find_objects(lab), start=1):
+        if sl is None or sizes[i] < min_px:
+            continue
+        out.append((sl[1].start, sl[0].start, sl[1].stop, sl[0].stop, int(sizes[i])))
+    # stesso ordine della versione senza scipy (primo pixel in ordine di lettura)
+    out.sort(key=lambda c: (c[1], c[0]))
+    return out
+
+
+def _components_py(mask: np.ndarray, min_px: int = 40):
     H, W = mask.shape
     seen = np.zeros_like(mask, dtype=bool)
     out = []

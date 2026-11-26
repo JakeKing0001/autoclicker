@@ -58,8 +58,50 @@ def rgb_to_hsv(rgb: np.ndarray):
     return h, s, mx
 
 
+_LUT = None
+
+
+def _lut() -> np.ndarray:
+    """Tabella con la classe di tutti i 16,7 milioni di colori (16 MB), calcolata una volta e salvata."""
+    global _LUT
+    if _LUT is None:
+        import hashlib
+        import inspect
+        import os
+        import tempfile
+        src = inspect.getsource(_classify_exact).encode()
+        tag = hashlib.sha1(src + ",".join(CLASSES).encode()).hexdigest()[:10]
+        path = os.path.join(tempfile.gettempdir(), f"yarnloop_colori_{tag}.npy")
+        try:
+            _LUT = np.load(path)
+        except Exception:
+            lut = np.empty(1 << 24, dtype=np.uint8)
+            step = 1 << 20
+            for a in range(0, 1 << 24, step):
+                idx = np.arange(a, a + step, dtype=np.uint32)
+                rgb = np.stack([(idx >> 16) & 255, (idx >> 8) & 255, idx & 255], axis=-1)
+                lut[a:a + step] = _classify_exact(rgb)
+            try:
+                np.save(path, lut)
+            except Exception:
+                pass
+            _LUT = lut
+    return _LUT
+
+
 def classify(rgb: np.ndarray) -> np.ndarray:
     """Restituisce un array di indici di classe (vedi CLASSES) con shape rgb.shape[:-1]."""
+    rgb = np.asarray(rgb)
+    if rgb.size == 0:
+        return np.zeros(rgb.shape[:-1], dtype=np.uint8)
+    r = rgb[..., 0].astype(np.uint32)
+    g = rgb[..., 1].astype(np.uint32)
+    b = rgb[..., 2].astype(np.uint32)
+    return _lut()[(r << 16) | (g << 8) | b]
+
+
+def _classify_exact(rgb: np.ndarray) -> np.ndarray:
+    """Classificazione vera (HSV): serve solo a costruire la tabella."""
     h, s, v = rgb_to_hsv(rgb)
     out = np.full(h.shape, _INDEX["bg"], dtype=np.uint8)
 

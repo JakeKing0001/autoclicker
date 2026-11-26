@@ -20,6 +20,7 @@ from PIL import Image
 from .config import Config
 from . import guide, screens
 from .debug import draw
+from .farm import Farmer
 from .strategy import Strategy
 from .vision import Analyzer
 
@@ -28,7 +29,7 @@ def _device(args):
     from .adb import ADBError, Device
 
     try:
-        dev = Device(args.serial)
+        dev = Device(args.serial, args.adb)
         print("Telefono collegato:", dev.check())
         return dev
     except ADBError as e:
@@ -42,64 +43,9 @@ def _fmt(counter):
 def cmd_run(args):
     cfg = Config.load(args.config)
     dev = _device(args)
-    an, strat = Analyzer(cfg), Strategy(cfg)
     if args.save_debug:
         os.makedirs(args.save_debug, exist_ok=True)
-    taps, idle, frame = 0, 0, 0
-    last_screen, last_screen_tap = None, 0.0
-    level_streak = 0
-    loader = (lambda n: guide.from_file(args.guide_file)) if args.guide_file else None
-    tracker = guide.LevelTracker(args.level, online=cfg.follow_guide, loader=loader)
-    print("Avviato. Ctrl+C per fermare.")
-    try:
-        while args.max_taps is None or taps < args.max_taps:
-            img = dev.screenshot()
-            arr = np.asarray(img)
-            st = an.analyze(arr)
-            # numero del livello (Home / Hai perso) e guida di yarnlooplevel.com per quel livello
-            kind, pt = screens.classify(arr) if st.belt_free is None else (None, None)
-            fresh = st.belt_free is not None and st.belt_free == (st.belt_cap or 5) and st.free_slots == len(st.slots)
-            in_level = st.belt_free is not None
-            tracker.update(in_level, fresh, kind, screens.level_number(arr, kind, in_level))
-            strat.guide = tracker.colors
-            dec = strat.decide(st)
-            frame += 1
-            # il livello deve essere visibile in due screenshot di fila, e non subito dopo un pulsante
-            # (dopo Riprova si vede per un attimo la tavola vecchia, poi parte la pubblicita')
-            level_streak = level_streak + 1 if st.belt_free is not None else 0
-            if dec.moves and (level_streak < 2 or time.monotonic() - last_screen_tap < cfg.settle_time):
-                dec.moves, dec.reason = [], "aspetto che il livello sia pronto"
-            print(
-                f"[{frame}] livello {tracker.level or '?'} guida {strat.guide or tracker.status or '-'} | esposti: {_fmt(st.exposed)} | "
-                f"slot liberi {st.free_slots} -> {dec.reason}"
-            )
-            if args.save_debug:
-                draw(img, st, cfg, dec.moves).save(os.path.join(args.save_debug, f"{frame:05d}.jpg"), quality=70)
-
-            if dec.moves:
-                idle = 0
-                for m in dec.moves:
-                    if not args.dry_run:
-                        dev.tap(m.spool.x, m.spool.y)
-                        strat.remember(m)
-                        taps += 1
-                    time.sleep(cfg.tap_gap)
-                time.sleep(cfg.after_burst)
-                continue
-
-            if st.belt_free is None and cfg.auto_buttons:
-                # fuori dal livello: Riprova / Continua / X / Livello N, solo se la schermata e' stabile
-                if kind and pt and kind == last_screen and time.monotonic() - last_screen_tap > cfg.screen_tap_every:
-                    print(f"   {kind}: tocco {pt}")
-                    if not args.dry_run:
-                        dev.tap(*pt)
-                    last_screen_tap = time.monotonic()
-                    kind = None
-                last_screen = kind
-            time.sleep(cfg.idle_delay)
-    except KeyboardInterrupt:
-        pass
-    print(f"Fermato. Tocchi fatti: {taps}")
+    Farmer(dev, cfg, args).run()
 
 
 def cmd_analyze(args):
@@ -162,6 +108,7 @@ def main(argv=None):
     p = argparse.ArgumentParser(prog="yarnloop_bot", description="Autoclicker per Yarn Loop (via ADB)")
     p.add_argument("--serial", "-s", help="seriale ADB del telefono (se ne hai piu' di uno)")
     p.add_argument("--config", "-c", help="file JSON con la configurazione")
+    p.add_argument("--adb", help="percorso di adb (se non e' nel PATH ne' in platform-tools)")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     r = sub.add_parser("run", help="gioca automaticamente")
@@ -170,6 +117,8 @@ def main(argv=None):
     r.add_argument("--save-debug", metavar="CARTELLA", help="salva ogni fotogramma annotato")
     r.add_argument("--level", type=int, help="livello di partenza (altrimenti lo legge in Home / Hai perso)")
     r.add_argument("--guide-file", help="pagina della guida salvata (.mht/.html) invece di scaricarla")
+    r.add_argument("--package", help="pacchetto del gioco (di solito lo capisce da solo)")
+    r.add_argument("--no-log", action="store_true", help="non scrivere il registro in logs/")
     r.set_defaults(func=cmd_run)
 
     a = sub.add_parser("analyze", help="analizza uno screenshot salvato")

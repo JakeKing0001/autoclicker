@@ -65,6 +65,13 @@ class Config:
     # Segui la guida di yarnlooplevel.com: i colori consigliati per il livello hanno la precedenza
     follow_guide: bool = True
     screen_tap_every: float = 2.5  # secondi minimi tra due tocchi su queste schermate
+    # Farm dal PC
+    back_after: float = 15.0       # schermata sconosciuta ferma da tanto: tasto Indietro (0 = mai)
+    lives_retry: float = 300.0     # con "Vite finite" ogni quanto chiudere il pannello e riprovare
+    fg_check_every: float = 5.0    # ogni quanto controllare che il gioco sia in primo piano
+    relaunch_after: float = 20.0   # gioco non in primo piano da tanto: lo riapre
+    keep_frames: int = 40          # fotogrammi salvati quando si perde un livello
+    log_debug_frames: bool = True  # nei fotogrammi salvati disegna quello che vede il bot
     settle_time: float = 4.0       # dopo uno di questi tocchi, attesa prima di toccare i rocchetti
 
     @classmethod

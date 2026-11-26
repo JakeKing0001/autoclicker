@@ -1,0 +1,10 @@
+@echo off
+chcp 65001 >nul
+cd /d "%~dp0"
+set "PATH=%~dp0platform-tools;%PATH%"
+where py >nul 2>nul && (set "PY=py") || (set "PY=python")
+echo Installo le librerie Python del bot...
+%PY% -m pip install -r requirements.txt
+echo.
+echo Fatto. Ora collega il telefono e lancia controlla.bat
+pause
